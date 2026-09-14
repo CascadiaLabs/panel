@@ -43,6 +43,16 @@ func main() {
 	router := api.NewRouter(handler, authn, cfg.SessionTTL)
 
 	log.Printf("panel listening on %s", cfg.ListenAddr)
+	if cfg.TLSCert != "" || cfg.TLSKey != "" {
+		if cfg.TLSCert == "" || cfg.TLSKey == "" {
+			log.Fatal("PANEL_TLS_CERT and PANEL_TLS_KEY must be set together")
+		}
+		log.Printf("panel HTTPS enabled (cert=%s key=%s)", cfg.TLSCert, cfg.TLSKey)
+		if err := http.ListenAndServeTLS(cfg.ListenAddr, cfg.TLSCert, cfg.TLSKey, router); err != nil {
+			log.Fatalf("server: %v", err)
+		}
+		return
+	}
 	if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {
 		log.Fatalf("server: %v", err)
 	}

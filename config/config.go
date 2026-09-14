@@ -14,6 +14,10 @@ type Config struct {
 	DBPath        string
 	ListenAddr    string
 	SessionTTL    time.Duration
+	// TLSCert/TLSKey — пути к сертификату и ключу (PEM). Заданы оба —
+	// панель слушает HTTPS на ListenAddr; ни один — обычный HTTP.
+	TLSCert string
+	TLSKey  string
 }
 
 func Load() Config {
@@ -23,6 +27,8 @@ func Load() Config {
 		DBPath:        getenv("DB_PATH", "./panel.db"),
 		ListenAddr:    getenv("LISTEN_ADDR", "0.0.0.0:2083"),
 		SessionTTL:    7 * 24 * time.Hour,
+		TLSCert:       getenv("PANEL_TLS_CERT", ""),
+		TLSKey:        getenv("PANEL_TLS_KEY", ""),
 	}
 }
 
