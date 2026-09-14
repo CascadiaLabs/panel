@@ -1,0 +1,10 @@
+.git
+node_modules
+**/node_modules
+api/static
+web/dist
+panel
+cmd/panel/static
+*.db
+.env
+.DS_Store

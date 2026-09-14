@@ -1,0 +1,638 @@
+package graph
+
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+)
+
+// Generate компилирует граф в map[физическая нода]конфиг sing-box (нативный JSON).
+// Граф обязан пройти валидацию; при ошибках возвращается список.
+func Generate(st State, phys []PhysNode) (map[string]string, error) {
+	vd := Validator{State: st, Nodes: phys}
+	res := vd.Validate()
+	if res.HasErrors() {
+		msgs := make([]string, 0, len(res.Errors))
+		for _, e := range res.Errors {
+			msgs = append(msgs, e.Message)
+		}
+		return nil, fmt.Errorf("граф невалиден (%d ошибок): %s", len(res.Errors), strings.Join(msgs, "; "))
+	}
+
+	// Validate the original topology before inserting compiler-only relay nodes.
+	st = expandShorthand(st)
+	byID := map[string]Node{}
+	for _, n := range st.Nodes {
+		byID[n.ID] = n
+	}
+
+	// каскадные цели outbound'ов: source element id → inbound
+	cascadeTarget := map[string]Node{}
+	for _, e := range st.Edges {
+		if s, ok := byID[e.SourceID]; ok && s.Kind == KindOutbound {
+			if t, ok := byID[e.TargetID]; ok && t.Kind == KindInbound {
+				cascadeTarget[s.ID] = t // validation guarantees one relay target
+			}
+		}
+	}
+
+	// физические ноды, задействованные в графе
+	physByID := map[string]PhysNode{}
+	for _, p := range phys {
+		physByID[p.ID] = p
+	}
+	usedNodes := map[string]bool{}
+	for _, n := range st.Nodes {
+		usedNodes[n.NodeID] = true
+	}
+
+	configs := map[string]string{}
+	// стабильный порядок обхода: по имени физической ноды
+	usedList := make([]string, 0, len(usedNodes))
+	for id := range usedNodes {
+		usedList = append(usedList, id)
+	}
+	sort.Slice(usedList, func(i, j int) bool {
+		return physByID[usedList[i]].Name < physByID[usedList[j]].Name
+	})
+
+	for _, physID := range usedList {
+		cfg, err := generateNodeConfig(st, physID, physByID, byID, cascadeTarget)
+		if err != nil {
+			return nil, fmt.Errorf("нода %s: %w", physByID[physID].Name, err)
+		}
+		out, err := json.MarshalIndent(cfg, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		configs[physID] = string(out) + "\n"
+	}
+	return configs, nil
+}
+
+// generateNodeConfig строит конфиг sing-box для одной физической ноды.
+func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, byID map[string]Node, cascadeTarget map[string]Node) (map[string]any, error) {
+	var inbounds, outbounds, rules []map[string]any
+
+	mine := func(n Node) bool { return n.NodeID == physID }
+
+	// порядок элементов детерминирован: pos_y, затем tag
+	sorted := func(ns []Node) []Node {
+		out := append([]Node{}, ns...)
+		sort.SliceStable(out, func(i, j int) bool {
+			if out[i].PosY != out[j].PosY {
+				return out[i].PosY < out[j].PosY
+			}
+			return out[i].Tag < out[j].Tag
+		})
+		return out
+	}
+
+	var inboundEls, outboundEls, balancerEls, ruleEls []Node
+	for _, n := range st.Nodes {
+		if !mine(n) {
+			continue
+		}
+		switch n.Kind {
+		case KindInbound:
+			inboundEls = append(inboundEls, n)
+		case KindOutbound:
+			outboundEls = append(outboundEls, n)
+		case KindBalancer:
+			balancerEls = append(balancerEls, n)
+		case KindRule:
+			ruleEls = append(ruleEls, n)
+		}
+	}
+
+	// рёбра ноды
+	targetsOf := func(id string) []Node {
+		var out []Node
+		for _, e := range st.Edges {
+			if e.SourceID == id {
+				if t, ok := byID[e.TargetID]; ok {
+					out = append(out, t)
+				}
+			}
+		}
+		return sorted(out)
+	}
+
+	// --- inbounds ---
+	for _, el := range sorted(inboundEls) {
+		in, err := ParseInboundSettings(el.Settings)
+		if err != nil {
+			return nil, fmt.Errorf("inbound %s: %w", el.Tag, err)
+		}
+		m := map[string]any{
+			"type":        el.Protocol,
+			"tag":         el.Tag,
+			"listen":      "::",
+			"listen_port": in.ListenPort,
+		}
+		switch el.Protocol {
+		case "vless":
+			users := make([]map[string]any, 0, len(in.Users))
+			for _, u := range in.Users {
+				uu := map[string]any{"name": u.Name, "uuid": u.UUID}
+				if u.Flow != "" {
+					uu["flow"] = u.Flow
+				}
+				users = append(users, uu)
+			}
+			m["users"] = users
+		case "vmess":
+			users := make([]map[string]any, 0, len(in.Users))
+			for _, u := range in.Users {
+				users = append(users, map[string]any{"name": u.Name, "uuid": u.UUID})
+			}
+			m["users"] = users
+		case "trojan":
+			users := make([]map[string]any, 0, len(in.Users))
+			for _, u := range in.Users {
+				users = append(users, map[string]any{"name": u.Name, "password": u.Password})
+			}
+			m["users"] = users
+		case "shadowsocks":
+			m["method"] = in.Method
+			if in.Network != "" {
+				m["network"] = in.Network
+			}
+			users := make([]map[string]any, 0, len(in.Users))
+			for _, u := range in.Users {
+				users = append(users, map[string]any{"name": u.Name, "password": u.Password})
+			}
+			m["users"] = users
+		case "hysteria2":
+			users := make([]map[string]any, 0, len(in.Users))
+			for _, u := range in.Users {
+				users = append(users, map[string]any{"name": u.Name, "password": u.Password})
+			}
+			m["users"] = users
+			if in.UpMbps > 0 {
+				m["up_mbps"] = in.UpMbps
+			}
+			if in.DownMbps > 0 {
+				m["down_mbps"] = in.DownMbps
+			}
+			if in.ObfsPassword != "" {
+				m["obfs"] = map[string]any{"type": "salamander", "password": in.ObfsPassword}
+			}
+		case "tuic":
+			users := make([]map[string]any, 0, len(in.Users))
+			for _, u := range in.Users {
+				users = append(users, map[string]any{"name": u.Name, "uuid": u.UUID, "password": u.Password})
+			}
+			m["users"] = users
+			if in.CongestionControl != "" {
+				m["congestion_control"] = in.CongestionControl
+			}
+		}
+		if tls := inboundTLSBlock(in); tls != nil {
+			m["tls"] = tls
+		}
+		if tr := transportBlock(in.Transport); tr != nil {
+			m["transport"] = tr
+		}
+		inbounds = append(inbounds, m)
+	}
+
+	// --- balancers (urltest/selector) ---
+	for _, el := range sorted(balancerEls) {
+		s, err := ParseBalancerSettings(el.Settings)
+		if err != nil {
+			return nil, fmt.Errorf("balancer %s: %w", el.Tag, err)
+		}
+		var members []string
+		for _, t := range targetsOf(el.ID) {
+			if t.Kind == KindOutbound {
+				members = append(members, t.Tag)
+			}
+		}
+		if len(members) == 0 {
+			return nil, fmt.Errorf("balancer %s без членов", el.Tag)
+		}
+		m := map[string]any{"type": el.Protocol, "tag": el.Tag, "outbounds": members}
+		if el.Protocol == "urltest" {
+			if s.URL != "" {
+				m["url"] = s.URL
+			}
+			if s.Interval != "" {
+				m["interval"] = s.Interval
+			}
+			if s.Tolerance > 0 {
+				m["tolerance"] = s.Tolerance
+			}
+		} else {
+			if s.Default != "" {
+				m["default"] = s.Default
+			}
+		}
+		outbounds = append(outbounds, m)
+	}
+
+	// --- outbounds ---
+	directTag := ""
+	for _, el := range sorted(outboundEls) {
+		if el.Protocol == "direct" {
+			if directTag == "" {
+				directTag = el.Tag
+			}
+			outbounds = append(outbounds, map[string]any{"type": "direct", "tag": el.Tag})
+			continue
+		}
+
+		// relay: поля подключения выводятся из целевого inbound
+		if target, isRelay := cascadeTarget[el.ID]; isRelay {
+			m, err := relayOutboundBlock(el, target, physByID[target.NodeID])
+			if err != nil {
+				return nil, err
+			}
+			outbounds = append(outbounds, m)
+			continue
+		}
+
+		// exit: ручные настройки
+		s, err := ParseOutboundSettings(el.Settings)
+		if err != nil {
+			return nil, fmt.Errorf("outbound %s: %w", el.Tag, err)
+		}
+		m := map[string]any{
+			"type":        el.Protocol,
+			"tag":         el.Tag,
+			"server":      s.Server,
+			"server_port": s.ServerPort,
+		}
+		switch el.Protocol {
+		case "vless":
+			m["uuid"] = s.UUID
+			if s.Flow != "" {
+				m["flow"] = s.Flow
+			}
+		case "vmess":
+			m["uuid"] = s.UUID
+			if s.Security != "" {
+				m["security"] = s.Security
+			}
+		case "trojan":
+			m["password"] = s.Password
+		case "shadowsocks":
+			m["method"] = s.Method
+			m["password"] = s.Password
+		case "hysteria2":
+			m["password"] = s.Password
+			if s.ObfsPassword != "" {
+				m["obfs"] = map[string]any{"type": "salamander", "password": s.ObfsPassword}
+			}
+			if s.UpMbps > 0 {
+				m["up_mbps"] = s.UpMbps
+			}
+			if s.DownMbps > 0 {
+				m["down_mbps"] = s.DownMbps
+			}
+		case "tuic":
+			m["uuid"] = s.UUID
+			m["password"] = s.Password
+			if s.CongestionControl != "" {
+				m["congestion_control"] = s.CongestionControl
+			}
+		}
+		if tls := outboundTLSBlock(s.TLS); tls != nil {
+			m["tls"] = tls
+		}
+		if tr := transportBlock(s.Transport); tr != nil {
+			m["transport"] = tr
+		}
+		outbounds = append(outbounds, m)
+	}
+
+	// Reuse a direct outbound or allocate a collision-safe compiler-only one.
+	if directTag == "" && len(inbounds) > 0 {
+		used := map[string]bool{}
+		for _, n := range st.Nodes {
+			used[strings.TrimSpace(n.Tag)] = true
+		}
+		directTag = uniqueGraphName(DefaultDirectTag, used)
+		outbounds = append(outbounds, map[string]any{"type": "direct", "tag": directTag})
+	}
+
+	// --- route rules (из рёбер) ---
+	// порядок: по pos_y inbound'а, затем pos_y правила, затем pos_y цели.
+	type ruleLink struct {
+		inbound Node
+		rule    *Node
+		target  Node
+	}
+	var links []ruleLink
+	for _, in := range sorted(inboundEls) {
+		if in.Exit {
+			links = append(links, ruleLink{inbound: in, target: Node{Tag: directTag}})
+		}
+		for _, mid := range targetsOf(in.ID) {
+			switch mid.Kind {
+			case KindRule:
+				for _, t := range targetsOf(mid.ID) {
+					if t.Kind == KindOutbound || t.Kind == KindBalancer {
+						links = append(links, ruleLink{inbound: in, rule: &[]Node{mid}[0], target: t})
+					}
+				}
+			case KindOutbound, KindBalancer:
+				links = append(links, ruleLink{inbound: in, target: mid})
+			}
+		}
+	}
+	sort.SliceStable(links, func(i, j int) bool {
+		if links[i].inbound.PosY != links[j].inbound.PosY {
+			return links[i].inbound.PosY < links[j].inbound.PosY
+		}
+		if links[i].inbound.Tag != links[j].inbound.Tag {
+			return links[i].inbound.Tag < links[j].inbound.Tag
+		}
+		// Specific rules must run before an inbound's unconditional default.
+		if (links[i].rule == nil) != (links[j].rule == nil) {
+			return links[i].rule != nil
+		}
+		ri, rj := 0.0, 0.0
+		if links[i].rule != nil {
+			ri = links[i].rule.PosY
+		}
+		if links[j].rule != nil {
+			rj = links[j].rule.PosY
+		}
+		if ri != rj {
+			return ri < rj
+		}
+		return links[i].target.PosY < links[j].target.PosY
+	})
+
+	for _, l := range links {
+		rule := map[string]any{
+			"inbound":  []string{l.inbound.Tag},
+			"outbound": l.target.Tag,
+		}
+		if l.rule != nil {
+			rs, err := ParseRuleSettings(l.rule.Settings)
+			if err != nil {
+				return nil, fmt.Errorf("rule %s: %w", l.rule.Tag, err)
+			}
+			applyRuleMatch(rule, rs)
+		}
+		rules = append(rules, rule)
+	}
+
+	cfg := map[string]any{
+		"log": map[string]any{"level": "info"},
+	}
+	if len(inbounds) > 0 {
+		cfg["inbounds"] = inbounds
+	} else {
+		cfg["inbounds"] = []map[string]any{}
+	}
+	if len(outbounds) > 0 {
+		cfg["outbounds"] = outbounds
+	} else {
+		cfg["outbounds"] = []map[string]any{}
+	}
+	route := map[string]any{"rules": rules}
+	if directTag != "" {
+		route["final"] = directTag
+	}
+	cfg["route"] = route
+	return cfg, nil
+}
+
+// DefaultDirectTag — тег неявного direct-outbound (route.final).
+const DefaultDirectTag = "cascadia-direct"
+
+// inboundTLSBlock строит серверный tls-блок sing-box.
+func inboundTLSBlock(in InboundSettings) map[string]any {
+	if in.TLS == nil || !in.TLS.Enabled {
+		return nil
+	}
+	m := map[string]any{"enabled": true}
+	if in.TLS.ServerName != "" {
+		m["server_name"] = in.TLS.ServerName
+	}
+	if len(in.TLS.ALPN) > 0 {
+		m["alpn"] = in.TLS.ALPN
+	}
+	if in.TLS.Reality != nil && in.TLS.Reality.Enabled {
+		m["reality"] = map[string]any{
+			"enabled":     true,
+			"handshake":   map[string]any{"server": in.TLS.Reality.HandshakeServer, "server_port": in.TLS.Reality.HandshakePort},
+			"private_key": in.TLS.Reality.PrivateKey,
+			"short_id":    in.TLS.Reality.ShortIDs,
+		}
+		return m
+	}
+	if in.TLS.CertPEM != "" {
+		m["certificate"] = []string{in.TLS.CertPEM}
+		if in.TLS.KeyPEM != "" {
+			m["key"] = []string{in.TLS.KeyPEM}
+		}
+	} else {
+		// sing-box: без сертификата и с insecure=true генерируется
+		// самоподписанный сертификат на лету.
+		m["insecure"] = true
+	}
+	return m
+}
+
+// outboundTLSBlock строит клиентский tls-блок sing-box.
+func outboundTLSBlock(t *OutboundTLS) map[string]any {
+	if t == nil || !t.Enabled {
+		return nil
+	}
+	m := map[string]any{"enabled": true}
+	if t.ServerName != "" {
+		m["server_name"] = t.ServerName
+	}
+	if len(t.ALPN) > 0 {
+		m["alpn"] = t.ALPN
+	}
+	if t.Insecure {
+		m["insecure"] = true
+	}
+	fingerprint := t.UTLSFingerprint
+	if t.Reality != nil && t.Reality.Enabled && fingerprint == "" {
+		fingerprint = "chrome"
+	}
+	if fingerprint != "" {
+		m["utls"] = map[string]any{"enabled": true, "fingerprint": fingerprint}
+	}
+	if t.Reality != nil && t.Reality.Enabled {
+		m["reality"] = map[string]any{
+			"enabled":    true,
+			"public_key": t.Reality.PublicKey,
+			"short_id":   t.Reality.ShortID,
+		}
+	}
+	return m
+}
+
+func transportBlock(tr *TransportSettings) map[string]any {
+	if tr == nil || tr.Type == "" {
+		return nil
+	}
+	switch tr.Type {
+	case "ws":
+		m := map[string]any{"type": "ws"}
+		if tr.Path != "" {
+			m["path"] = tr.Path
+		}
+		if tr.Host != "" {
+			m["headers"] = map[string]any{"Host": tr.Host}
+		}
+		return m
+	case "grpc":
+		m := map[string]any{"type": "grpc"}
+		if tr.ServiceName != "" {
+			m["service_name"] = tr.ServiceName
+		}
+		return m
+	case "http":
+		m := map[string]any{"type": "http"}
+		if tr.Path != "" {
+			m["path"] = tr.Path
+		}
+		if tr.Host != "" {
+			m["host"] = []string{tr.Host}
+		}
+		return m
+	case "httpupgrade":
+		m := map[string]any{"type": "httpupgrade"}
+		if tr.Path != "" {
+			m["path"] = tr.Path
+		}
+		if tr.Host != "" {
+			m["host"] = tr.Host
+		}
+		return m
+	}
+	return nil
+}
+
+// relayOutboundBlock строит outbound для каскадной связи: серверные поля и
+// учётные данные берутся из целевого inbound (единый источник правды).
+func relayOutboundBlock(ob Node, target Node, targetPhys PhysNode) (map[string]any, error) {
+	in, err := ParseInboundSettings(target.Settings)
+	if err != nil {
+		return nil, fmt.Errorf("inbound %s: %w", target.Tag, err)
+	}
+	host := in.PublicHost
+	if host == "" {
+		host = targetPhys.Host()
+	}
+	m := map[string]any{
+		"type":        ob.Protocol,
+		"tag":         ob.Tag,
+		"server":      host,
+		"server_port": in.ListenPort,
+	}
+
+	var user InboundUser
+	if len(in.Users) > 0 {
+		user = in.Users[0]
+	}
+	switch ob.Protocol {
+	case "vless":
+		m["uuid"] = user.UUID
+		if user.Flow != "" {
+			m["flow"] = user.Flow
+		}
+	case "vmess":
+		m["uuid"] = user.UUID
+		m["security"] = "auto"
+	case "trojan":
+		m["password"] = user.Password
+	case "shadowsocks":
+		m["method"] = in.Method
+		m["password"] = user.Password
+	case "hysteria2":
+		m["password"] = user.Password
+		if in.ObfsPassword != "" {
+			m["obfs"] = map[string]any{"type": "salamander", "password": in.ObfsPassword}
+		}
+	case "tuic":
+		m["uuid"] = user.UUID
+		m["password"] = user.Password
+		if in.CongestionControl != "" {
+			m["congestion_control"] = in.CongestionControl
+		}
+	}
+
+	// utls fingerprint может быть задан в настройках outbound
+	utlsFingerprint := ""
+	if out, err := ParseOutboundSettings(ob.Settings); err == nil && out.TLS != nil {
+		utlsFingerprint = out.TLS.UTLSFingerprint
+	}
+
+	// TLS зеркалирует inbound
+	if tls := clientTLSFromInbound(in, utlsFingerprint); tls != nil {
+		m["tls"] = tls
+	}
+	if tr := transportBlock(in.Transport); tr != nil {
+		m["transport"] = tr
+	}
+	return m, nil
+}
+
+// clientTLSFromInbound зеркалирует TLS inbound'а на сторону клиента (outbound).
+func clientTLSFromInbound(in InboundSettings, utlsFingerprint string) map[string]any {
+	if in.TLS == nil || !in.TLS.Enabled {
+		return nil
+	}
+	t := OutboundTLS{
+		Enabled:    true,
+		ServerName: in.TLS.ServerName,
+		ALPN:       in.TLS.ALPN,
+	}
+	if t.ServerName == "" && in.PublicHost != "" {
+		t.ServerName = in.PublicHost
+	}
+	if in.TLS.Reality != nil && in.TLS.Reality.Enabled {
+		pub, err := RealityPublicKey(in.TLS.Reality.PrivateKey)
+		if err != nil {
+			// Валидация уже проверила формат; здесь ошибка маловероятна.
+			return map[string]any{"enabled": true}
+		}
+		shortID := ""
+		if len(in.TLS.Reality.ShortIDs) > 0 {
+			shortID = in.TLS.Reality.ShortIDs[0]
+		}
+		t.Reality = &RealityOut{Enabled: true, PublicKey: pub, ShortID: shortID}
+	} else if in.TLS.CertPEM == "" {
+		// самоподписанный сертификат сервера — клиент пропускает проверку
+		t.Insecure = true
+	}
+	t.UTLSFingerprint = utlsFingerprint
+	return outboundTLSBlock(&t)
+}
+
+func applyRuleMatch(rule map[string]any, rs RuleSettings) {
+	if len(rs.Network) > 0 {
+		rule["network"] = rs.Network
+	}
+	if len(rs.Protocol) > 0 {
+		rule["protocol"] = rs.Protocol
+	}
+	if len(rs.Domain) > 0 {
+		rule["domain"] = rs.Domain
+	}
+	if len(rs.DomainSuffix) > 0 {
+		rule["domain_suffix"] = rs.DomainSuffix
+	}
+	if len(rs.DomainKeyword) > 0 {
+		rule["domain_keyword"] = rs.DomainKeyword
+	}
+	if len(rs.IPCIDR) > 0 {
+		rule["ip_cidr"] = rs.IPCIDR
+	}
+	if len(rs.Port) > 0 {
+		rule["port"] = rs.Port
+	}
+	if rs.Invert {
+		rule["invert"] = true
+	}
+}

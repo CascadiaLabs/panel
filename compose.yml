@@ -1,0 +1,32 @@
+services:
+  panel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cascadia-panel
+    restart: unless-stopped
+    ports:
+      - "2083:2083"
+    environment:
+      - PANEL_TOKEN=${PANEL_TOKEN}
+      - DB_PATH=/data/panel.db
+      - LISTEN_ADDR=0.0.0.0:2083
+    volumes:
+      - panel-data:/data
+    networks:
+      - panel-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+        reservations:
+          cpus: '0.05'
+          memory: 16M
+
+volumes:
+  panel-data:
+
+networks:
+  panel-net:
+    driver: bridge
