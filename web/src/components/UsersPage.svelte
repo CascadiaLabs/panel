@@ -210,7 +210,7 @@
 </div>
 
 {#if qrUser}
-  <div class="modal-mask" onclick={(e) => { if (e.target === e.currentTarget) qrUser = null; }}>
+  <div class="modal-mask" role="button" aria-label="Закрыть" onclick={(e) => { if (e.target === e.currentTarget) qrUser = null; }}>
     <div class="modal">
       <h2>Подписка: {qrUser.name}</h2>
       <p class="hint">Одна ссылка — клиент получит все entry-inbound графа. Подписка обновляется автоматически при изменении графа.</p>

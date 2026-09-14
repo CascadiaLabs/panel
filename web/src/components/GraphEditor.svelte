@@ -675,7 +675,6 @@
   }
   .graph-name { font-weight: 600; color: #e2e8f0; }
   .muted { color: #94a3b8; }
-  .link-hint { color: #38bdf8; }
   .badge {
     padding: 0.1rem 0.45rem;
     border-radius: 0.25rem;
