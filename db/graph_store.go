@@ -84,6 +84,15 @@ func (s *Store) SaveGraphState(graphID string, state graph.State) error {
 		if len(n.Settings) > 0 {
 			settings = string(n.Settings)
 		}
+		// каждому inbound нужен служебный relay-пользователь (для каскадных подключений)
+		if n.Kind == graph.KindInbound {
+			if in, err := graph.ParseInboundSettings(n.Settings); err == nil && in.RelayUser == nil {
+				in.RelayUser = &graph.InboundUser{Name: "relay", UUID: graph.GenerateUUID(), Password: graph.GeneratePassword()}
+				if raw, err := json.Marshal(in); err == nil {
+					settings = string(raw)
+				}
+			}
+		}
 		if _, err := tx.Exec(`INSERT INTO graph_nodes (id, graph_id, node_id, kind, protocol, tag, settings, pos_x, pos_y, entry, "exit", created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			n.ID, graphID, n.NodeID, n.Kind, n.Protocol, n.Tag, settings, n.PosX, n.PosY, btoi(n.Entry), btoi(n.Exit), now, now); err != nil {

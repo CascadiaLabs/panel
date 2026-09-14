@@ -7,12 +7,13 @@
   import NodeForm from '$components/NodeForm.svelte';
   import NodeDetail from '$components/NodeDetail.svelte';
   import GraphsPage from '$components/GraphsPage.svelte';
+  import UsersPage from '$components/UsersPage.svelte';
 
   const store = createNodesStore();
 
   let authState = $state<'checking' | 'login' | 'ok'>('checking');
   let user = $state<Me | null>(null);
-  let view = $state<'nodes' | 'graphs' | 'detail'>('nodes');
+  let view = $state<'nodes' | 'graphs' | 'users' | 'detail'>('nodes');
   let selectedId = $state('');
   let showForm = $state(false);
   let showPassword = $state(false);
@@ -84,6 +85,8 @@
   <NodeDetail id={selectedId} on:back={() => switchView('nodes')} />
 {:else if view === 'graphs'}
   <GraphsPage onBack={() => switchView('nodes')} />
+{:else if view === 'users'}
+  <UsersPage onBack={() => switchView('nodes')} />
 {:else}
   <div class="container">
     <header>
@@ -92,6 +95,7 @@
         <nav>
           <button class="nav-btn {view === 'nodes' ? 'active' : ''}" onclick={() => switchView('nodes')}>Ноды</button>
           <button class="nav-btn" onclick={() => switchView('graphs')}>Графы</button>
+          <button class="nav-btn {view === 'users' ? 'active' : ''}" onclick={() => switchView('users')}>Пользователи</button>
         </nav>
       </div>
       <div class="actions">

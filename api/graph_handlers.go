@@ -46,8 +46,8 @@ func (h *Handler) CreateGraph(w http.ResponseWriter, r *http.Request) {
 }
 
 type graphResponse struct {
-	Graph      db.Graph         `json:"graph"`
-	State      graph.State      `json:"state"`
+	Graph      db.Graph          `json:"graph"`
+	State      graph.State       `json:"state"`
 	Validation *graph.Validation `json:"validation,omitempty"`
 }
 
@@ -77,7 +77,7 @@ func (h *Handler) SaveGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name  *string     `json:"name"`
+		Name  *string      `json:"name"`
 		State *graph.State `json:"state"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -219,22 +219,35 @@ func (h *Handler) DeployGraph(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	state, err := h.store.LoadGraphState(id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	configs, err := graph.Generate(state, h.physNodes(r))
+	reports, deployed, err := h.deployGraph(r, id)
 	if err != nil {
 		writeErr422(w, err.Error())
 		return
 	}
+	if !deployed {
+		w.WriteHeader(http.StatusMultiStatus)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+	writeJSON(w, map[string]any{"deployed": deployed, "results": reports})
+}
+
+// deployGraph генерирует конфиги графа из актуального состояния и пушит их
+// на ноды параллельно. Переиспользуется и user-операциями (инжект кредов).
+func (h *Handler) deployGraph(r *http.Request, id string) ([]deployReport, bool, error) {
+	state, err := h.store.LoadGraphState(id)
+	if err != nil {
+		return nil, false, err
+	}
+
+	configs, err := graph.Generate(state, h.physNodes(r))
+	if err != nil {
+		return nil, false, err
+	}
 
 	nodes, err := h.store.List()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, false, err
 	}
 	byID := map[string]db.Node{}
 	for _, n := range nodes {
@@ -284,12 +297,7 @@ func (h *Handler) DeployGraph(w http.ResponseWriter, r *http.Request) {
 			deployed = false
 		}
 	}
-	if !deployed {
-		w.WriteHeader(http.StatusMultiStatus)
-	} else {
-		w.WriteHeader(http.StatusOK)
-	}
-	writeJSON(w, map[string]any{"deployed": deployed, "results": reports})
+	return reports, deployed, nil
 }
 
 func writeErr422(w http.ResponseWriter, msg string) {

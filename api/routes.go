@@ -64,9 +64,21 @@ func NewRouter(h *Handler, authn *auth.Authenticator, sessionTTL time.Duration) 
 				r.Post("/{id}/deploy", h.DeployGraph)
 			})
 
+			r.Route("/users", func(r chi.Router) {
+				r.Get("/", h.ListUsers)
+				r.Post("/", h.CreateUser)
+				r.Put("/{id}", h.UpdateUser)
+				r.Delete("/{id}", h.DeleteUser)
+			})
+
 			r.Post("/util/generate", h.GenerateSecret)
 		})
+
+		// Публичная подписка VPN-пользователя — без аутентификации.
 	})
+
+	// Публичная подписка: /sub/{token} отдаёт share-links (одна подписка = все entry-inbound).
+	r.Get("/sub/{token}", h.Sub)
 
 	// Serve the embedded frontend: real files under /assets/, SPA fallback
 	// to index.html for everything else.

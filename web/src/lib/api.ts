@@ -157,3 +157,51 @@ export function generateRealityPair(): Promise<{ private_key: string; public_key
     body: JSON.stringify({ kind: 'reality' }),
   });
 }
+
+// --- VPN-пользователи ---
+
+export interface PanelUser {
+  id: string;
+  name: string;
+  graph_id: string;
+  graph_name?: string;
+  uuid: string;
+  password: string;
+  flow: string;
+  remark: string;
+  sub_token: string;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface DeployResult {
+  deployed: boolean;
+  results: { node_id: string; name: string; ok: boolean; error?: string }[];
+}
+
+export interface UserOpResponse {
+  user: PanelUser;
+  deploy?: DeployResult;
+  warning?: string;
+}
+
+export function listUsers(): Promise<PanelUser[]> {
+  return api<PanelUser[]>('/users');
+}
+
+export function createUser(body: { name: string; graph_id: string; remark?: string; flow?: string }): Promise<UserOpResponse> {
+  return api<UserOpResponse>('/users', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function updateUser(id: string, body: { name?: string; remark?: string; flow?: string; graph_id?: string; enabled?: boolean }): Promise<UserOpResponse> {
+  return api<UserOpResponse>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+}
+
+export function deleteUser(id: string): Promise<void> {
+  return api<void>(`/users/${id}`, { method: 'DELETE' });
+}
+
+export function subUrl(token: string): string {
+  return `${location.origin}/sub/${token}`;
+}

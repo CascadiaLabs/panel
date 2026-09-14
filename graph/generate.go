@@ -134,7 +134,7 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 		switch el.Protocol {
 		case "vless":
 			users := make([]map[string]any, 0, len(in.Users))
-			for _, u := range in.Users {
+			for _, u := range inboundUsers(in) {
 				uu := map[string]any{"name": u.Name, "uuid": u.UUID}
 				if u.Flow != "" {
 					uu["flow"] = u.Flow
@@ -144,13 +144,13 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 			m["users"] = users
 		case "vmess":
 			users := make([]map[string]any, 0, len(in.Users))
-			for _, u := range in.Users {
+			for _, u := range inboundUsers(in) {
 				users = append(users, map[string]any{"name": u.Name, "uuid": u.UUID})
 			}
 			m["users"] = users
 		case "trojan":
 			users := make([]map[string]any, 0, len(in.Users))
-			for _, u := range in.Users {
+			for _, u := range inboundUsers(in) {
 				users = append(users, map[string]any{"name": u.Name, "password": u.Password})
 			}
 			m["users"] = users
@@ -160,13 +160,13 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 				m["network"] = in.Network
 			}
 			users := make([]map[string]any, 0, len(in.Users))
-			for _, u := range in.Users {
+			for _, u := range inboundUsers(in) {
 				users = append(users, map[string]any{"name": u.Name, "password": u.Password})
 			}
 			m["users"] = users
 		case "hysteria2":
 			users := make([]map[string]any, 0, len(in.Users))
-			for _, u := range in.Users {
+			for _, u := range inboundUsers(in) {
 				users = append(users, map[string]any{"name": u.Name, "password": u.Password})
 			}
 			m["users"] = users
@@ -181,7 +181,7 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 			}
 		case "tuic":
 			users := make([]map[string]any, 0, len(in.Users))
-			for _, u := range in.Users {
+			for _, u := range inboundUsers(in) {
 				users = append(users, map[string]any{"name": u.Name, "uuid": u.UUID, "password": u.Password})
 			}
 			m["users"] = users
@@ -513,6 +513,21 @@ func transportBlock(tr *TransportSettings) map[string]any {
 	return nil
 }
 
+// inboundUsers возвращает клиентских пользователей + служебного relay-пользователя
+// (каскадный outbound подключается как relay_user, а не как клиентский).
+func inboundUsers(in InboundSettings) []InboundUser {
+	users := in.Users
+	if in.RelayUser == nil {
+		return users
+	}
+	for _, u := range users {
+		if u.UUID != "" && u.UUID == in.RelayUser.UUID {
+			return users
+		}
+	}
+	return append(users, *in.RelayUser)
+}
+
 // relayOutboundBlock строит outbound для каскадной связи: серверные поля и
 // учётные данные берутся из целевого inbound (единый источник правды).
 func relayOutboundBlock(ob Node, target Node, targetPhys PhysNode) (map[string]any, error) {
@@ -532,8 +547,10 @@ func relayOutboundBlock(ob Node, target Node, targetPhys PhysNode) (map[string]a
 	}
 
 	var user InboundUser
-	if len(in.Users) > 0 {
-		user = in.Users[0]
+	if in.RelayUser != nil {
+		user = *in.RelayUser
+	} else if len(in.Users) > 0 {
+		user = in.Users[0] // legacy: графы, сохранённые до введения relay_user
 	}
 	switch ob.Protocol {
 	case "vless":

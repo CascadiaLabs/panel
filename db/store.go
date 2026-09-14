@@ -81,6 +81,24 @@ CREATE TABLE IF NOT EXISTS graph_edges (
 	CHECK (source_id <> target_id)
 );
 CREATE INDEX IF NOT EXISTS idx_graph_edges_graph ON graph_edges(graph_id);
+
+-- VPN-пользователи: креды вшиваются в entry-inbound графа; подписка
+-- /sub/{sub_token} отдаёт все entry-inbound как v2ray share-links.
+CREATE TABLE IF NOT EXISTS panel_users (
+	id         TEXT PRIMARY KEY,
+	name       TEXT NOT NULL,
+	graph_id   TEXT NOT NULL REFERENCES graphs(id) ON DELETE CASCADE,
+	uuid       TEXT NOT NULL,
+	password   TEXT NOT NULL,
+	flow       TEXT NOT NULL DEFAULT '',
+	remark     TEXT NOT NULL DEFAULT '',
+	sub_token  TEXT NOT NULL UNIQUE,
+	enabled    INTEGER NOT NULL DEFAULT 1,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_panel_users_graph ON panel_users(graph_id);
+CREATE INDEX IF NOT EXISTS idx_panel_users_sub ON panel_users(sub_token);
 CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(source_id);
 CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target_id);
 `

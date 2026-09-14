@@ -331,6 +331,60 @@ func TestGenerateHysteria2AndTUIC(t *testing.T) {
 	}
 }
 
+// TestRelayUserNoClients — каскад со служебным relay_user:
+// целевой inbound без клиентских пользователей (их дают «Пользователи»), relay
+// подключается креденитью relay_user, а не Users[0].
+func TestRelayUserNoClients(t *testing.T) {
+	st, phys := twoNodeCascade(t)
+	st.Nodes[2].Settings = mustJSON(t, InboundSettings{
+		ListenPort: 8443, PublicHost: "b.example.com",
+		RelayUser: &InboundUser{Name: "relay", UUID: "rrrrrrrr-rrrr-rrrr-rrrr-rrrrrrrrrrrr", Password: "relay-secret"},
+		TLS:       &InboundTLS{Enabled: true, ServerName: "b.example.com", CertPEM: "PEM-B"},
+	})
+
+	configs, err := Generate(st, phys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfgA, cfgB map[string]any
+	if err := json.Unmarshal([]byte(configs["nodeA"]), &cfgA); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(configs["nodeB"]), &cfgB); err != nil {
+		t.Fatal(err)
+	}
+
+	// relay outbound подключается как relay_user
+	var outA map[string]any
+	for _, o := range cfgA["outbounds"].([]any) {
+		if o.(map[string]any)["tag"] == "out-a" {
+			outA = o.(map[string]any)
+		}
+	}
+	if outA == nil || outA["uuid"] != "rrrrrrrr-rrrr-rrrr-rrrr-rrrrrrrrrrrr" {
+		t.Fatalf("relay creds must come from relay_user, got %v", outA)
+	}
+
+	// целевой inbound пускает relay_user
+	inB := cfgB["inbounds"].([]any)[0].(map[string]any)
+	users := inB["users"].([]any)
+	found := false
+	for _, u := range users {
+		if u.(map[string]any)["uuid"] == "rrrrrrrr-rrrr-rrrr-rrrr-rrrrrrrrrrrr" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("target inbound must include relay_user: %v", users)
+	}
+
+	// валидация каскада без клиентских users не падает (relay_user закрывает креды)
+	res := (&Validator{State: st, Nodes: phys}).Validate()
+	if res.HasErrors() {
+		t.Fatalf("cascade with relay_user must validate: %+v", res.Errors)
+	}
+}
+
 func TestGenerateRejectsInvalid(t *testing.T) {
 	st := State{Nodes: []Node{
 		{ID: "x", NodeID: "n1", Kind: KindOutbound, Protocol: "vless", Tag: "x"},

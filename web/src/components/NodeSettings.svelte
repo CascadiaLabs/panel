@@ -3,7 +3,7 @@
   // Мутирует graphNode.settings напрямую; после каждого изменения дергается onChanged().
   import { generateSecret, generateRealityPair } from '$lib/api';
   import { randomUUID } from '$lib/uuid';
-  import { applyProtocol, userForProtocol } from '$lib/element';
+  import { applyProtocol } from '$lib/element';
   import type { GraphNode, Node } from '$lib/api';
 
   let {
@@ -27,12 +27,6 @@
           : ['match']
   );
 
-  // протокол пользователя требует списка users?
-  const userProto = $derived(
-    graphNode.kind === 'inbound' &&
-    ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'tuic'].includes(graphNode.protocol)
-  );
-
   let busy = $state(false);
 
   // список через запятую для полей rule
@@ -45,11 +39,6 @@
 
   function touch() {
     onChanged();
-  }
-
-  async function gen(field) {
-    s[field] = await generateSecret(field === 'uuid' ? 'uuid' : 'password');
-    touch();
   }
 
   async function genReality() {
@@ -74,15 +63,8 @@
     touch();
   }
 
-  function addUser() {
-    s.users ??= [];
-    s.users.push(userForProtocol(graphNode.protocol, `user${s.users.length + 1}`));
-    touch();
-  }
-
-  function delUser(i) {
-    s.users.splice(i, 1);
-    touch();
+  function copyText(text) {
+    navigator.clipboard?.writeText(text ?? '');
   }
 </script>
 
@@ -131,37 +113,6 @@
         <input id="el-host" bind:value={s.public_host} oninput={touch} placeholder="напр. node1.example.com" />
       </div>
 
-      {#if userProto}
-        <div class="field">
-          <label>Пользователи</label>
-          {#each s.users ?? [] as u, i}
-            <div class="user-row">
-              <input placeholder="имя" bind:value={u.name} oninput={touch} />
-              {#if ['vless', 'vmess', 'tuic'].includes(graphNode.protocol)}
-                <div class="gen-wrap">
-                  <input placeholder="uuid" bind:value={u.uuid} oninput={touch} />
-                  <button class="small" title="Сгенерировать UUID" onclick={() => { u.uuid = randomUUID(); touch(); }}>⟳</button>
-                </div>
-              {/if}
-              {#if ['trojan', 'shadowsocks', 'hysteria2', 'tuic'].includes(graphNode.protocol)}
-                <div class="gen-wrap">
-                  <input type="password" placeholder="пароль" bind:value={u.password} oninput={touch} />
-                  <button class="small" title="Сгенерировать пароль" onclick={() => { u.password = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2); touch(); }}>⟳</button>
-                </div>
-              {/if}
-              {#if graphNode.protocol === 'vless'}
-                <select bind:value={u.flow} onchange={touch} title="flow (xtls-rprx-vision для reality)">
-                  <option value="">без flow</option>
-                  <option value="xtls-rprx-vision">xtls-rprx-vision</option>
-                </select>
-              {/if}
-              <button class="danger small" onclick={() => delUser(i)}>×</button>
-            </div>
-          {/each}
-          <button class="small" onclick={addUser}>+ пользователь</button>
-        </div>
-      {/if}
-
       {#if graphNode.protocol === 'shadowsocks'}
         <div class="field">
           <label for="el-method">Метод шифрования</label>
@@ -209,60 +160,103 @@
             Включить TLS {#if ['hysteria2', 'tuic'].includes(graphNode.protocol)}(обязательно){/if}
           </label>
         </div>
-        {#if s.tls?.enabled}
-          <div class="field">
-            <label for="el-sni">Server name (SNI)</label>
-            <input id="el-sni" bind:value={s.tls.server_name} oninput={touch} />
-          </div>
-          {#if ['vless', 'trojan'].includes(graphNode.protocol)}
-            <div class="field">
-              <label class="check">
-                <input type="checkbox" checked={s.tls.reality?.enabled ?? false}
-                       onchange={(e) => { s.tls.reality ??= {}; s.tls.reality.enabled = e.target.checked; touch(); }} />
-                Reality (маскировка под чужой TLS)
-              </label>
-            </div>
-          {/if}
-          {#if s.tls.reality?.enabled}
-            <div class="field">
-              <label for="el-reality-priv">Reality private key (x25519)</label>
-              <div class="gen-wrap">
-                <input id="el-reality-priv" bind:value={s.tls.reality.private_key} oninput={touch} />
-                <button class="small" disabled={busy} onclick={genReality} title="Сгенерировать пару ключей">⟳</button>
+        {#if ['vless', 'trojan'].includes(graphNode.protocol)}
+        <div class="field">
+          <label class="check">
+            <input type="checkbox" checked={s.tls?.reality?.enabled ?? false}
+                   onchange={(e) => { s.tls ??= {}; s.tls.reality ??= {}; s.tls.reality.enabled = e.target.checked; if (e.target.checked) s.tls.enabled = true; touch(); }} />
+            Reality (маскировка под чужой TLS)
+          </label>
+        </div>
+      {/if}
+      {#if s.tls?.reality?.enabled}
+            <div class="board">
+              <div class="board-head">
+                <span class="badge">REALITY</span>
+                <span class="board-sub">маскировка под чужой TLS-сайт</span>
               </div>
-              {#if s.tls.reality._public}
-                <p class="hint">Публичный ключ: <code>{s.tls.reality._public}</code></p>
-              {/if}
-            </div>
-            <div class="field">
-              <label for="el-reality-sid">Short ID</label>
-              <div class="gen-wrap">
+
+              <div class="field">
+                <label for="el-hs-server">Handshake сервер</label>
+                <input id="el-hs-server" list="reality-hosts" bind:value={s.tls.reality.handshake_server}
+                       oninput={touch} placeholder="www.microsoft.com" />
+                <datalist id="reality-hosts">
+                  {#each ['www.microsoft.com', 'www.apple.com', 'www.google.com', 'dl.google.com', 'cloudflare.com', 'www.yahoo.com', 'www.amazon.com'] as h}
+                    <option value={h}></option>
+                  {/each}
+                </datalist>
+              </div>
+              <div class="field two">
+                <div>
+                  <label for="el-hs-port">Port</label>
+                  <input id="el-hs-port" type="number" bind:value={s.tls.reality.handshake_port} oninput={touch} placeholder="443" />
+                </div>
+                <div>
+                  <label for="el-sni">SNI (как handshake)</label>
+                  <input id="el-sni" bind:value={s.tls.server_name} oninput={touch} placeholder="домен handshake" />
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="el-reality-priv">
+                  Private key (x25519)
+                  <button class="link" disabled={busy} onclick={genReality} title="Сгенерировать пару ключей">сгенерировать ⟳</button>
+                </label>
+                <input id="el-reality-priv" type="password" bind:value={s.tls.reality.private_key} oninput={touch} />
+                {#if s.tls.reality._public}
+                  <div class="kv">
+                    <span class="kv-key">Public key (для клиента)</span>
+                    <code>{s.tls.reality._public}</code>
+                    <button class="small" title="Скопировать" onclick={() => copyText(s.tls.reality._public)}>⧉</button>
+                  </div>
+                {/if}
+              </div>
+
+              <div class="field">
+                <label for="el-reality-sid">
+                  Short ID
+                  <button class="link" onclick={genShortID} title="Сгенерировать">сгенерировать ⟳</button>
+                </label>
                 <input id="el-reality-sid" value={s.tls.reality.short_ids?.[0] ?? ''}
                        oninput={(e) => { s.tls.reality.short_ids = e.target.value ? [e.target.value] : []; touch(); }} />
-                <button class="small" onclick={genShortID} title="Сгенерировать">⟳</button>
+                <p class="hint">Пусто = принимать любой. Клиенту укажите тот же Short ID.</p>
               </div>
-            </div>
-            <div class="field two">
-              <div>
-                <label for="el-hs-server">Handshake server (маскировка)</label>
-                <input id="el-hs-server" bind:value={s.tls.reality.handshake_server} oninput={touch} placeholder="www.microsoft.com" />
-              </div>
-              <div>
-                <label for="el-hs-port">Handshake port</label>
-                <input id="el-hs-port" type="number" bind:value={s.tls.reality.handshake_port} oninput={touch} placeholder="443" />
-              </div>
+
+              <details class="sum">
+                <summary>Параметры для клиента</summary>
+                <div class="kv-grid">
+                  <span>Address</span><code>{s.public_host || 'хост ноды'}</code>
+                  <span>Port</span><code>{s.listen_port || '…'}</code>
+                  <span>SNI</span><code>{s.tls.server_name || '…'}</code>
+                  <span>uTLS</span><code>chrome</code>
+                  {#if graphNode.protocol === 'vless'}
+                    <span>Flow</span><code>xtls-rprx-vision (у пользователя)</code>
+                  {/if}
+                  {#if s.tls.reality._public}
+                    <span>pbk</span><code>{s.tls.reality._public}</code>
+                  {/if}
+                  {#if s.tls.reality.short_ids?.[0]}
+                    <span>sid</span><code>{s.tls.reality.short_ids[0]}</code>
+                  {/if}
+                </div>
+              </details>
             </div>
           {:else}
-            <div class="field">
-              <label for="el-cert">Certificate PEM (пусто = самоподписанный)</label>
-              <textarea id="el-cert" rows="4" bind:value={s.tls.cert_pem} oninput={touch}></textarea>
-            </div>
-            <div class="field">
-              <label for="el-key">Key PEM</label>
-              <textarea id="el-key" rows="4" bind:value={s.tls.key_pem} oninput={touch}></textarea>
-            </div>
+            {#if s.tls?.enabled}
+              <div class="field">
+                <label for="el-sni">Server name (SNI)</label>
+                <input id="el-sni" bind:value={s.tls.server_name} oninput={touch} />
+              </div>
+              <div class="field">
+                <label for="el-cert">Certificate PEM (пусто = самоподписанный)</label>
+                <textarea id="el-cert" rows="4" bind:value={s.tls.cert_pem} oninput={touch}></textarea>
+              </div>
+              <div class="field">
+                <label for="el-key">Key PEM</label>
+                <textarea id="el-key" rows="4" bind:value={s.tls.key_pem} oninput={touch}></textarea>
+              </div>
+            {/if}
           {/if}
-        {/if}
 
         {#if ['vless', 'vmess', 'trojan'].includes(graphNode.protocol)}
           <h3>Transport</h3>
@@ -487,14 +481,25 @@
   .close:hover { background: none; color: #e2e8f0; }
   button.small { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
   .field.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-  .user-row { display: flex; gap: 0.35rem; margin-bottom: 0.35rem; flex-wrap: wrap; }
-  .user-row input { min-width: 0; flex: 1; }
   .gen-wrap { display: flex; gap: 0.35rem; flex: 1; min-width: 0; }
   .gen-wrap input { flex: 1; min-width: 0; }
   .hint { color: #94a3b8; font-size: 0.75rem; margin-bottom: 0.75rem; }
-  .hint code { color: #38bdf8; word-break: break-all; }
   .derived { background: #0f172a; border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1rem; }
   .derived h3 { margin-top: 0; }
   .check { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
   .check input { width: auto; }
+  .board { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 0.5rem; }
+  .board-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+  .badge { background: #155e75; color: #a5f3fc; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em; padding: 0.15rem 0.4rem; border-radius: 0.25rem; }
+  .board-sub { color: #64748b; font-size: 0.7rem; }
+  button.link { background: none; color: #38bdf8; font-size: 0.7rem; padding: 0; margin-left: 0.5rem; text-decoration: underline; }
+  button.link:hover { background: none; color: #7dd3fc; }
+  .kv { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.35rem; flex-wrap: wrap; }
+  .kv-key { color: #94a3b8; font-size: 0.7rem; }
+  .kv code { color: #38bdf8; font-size: 0.7rem; word-break: break-all; }
+  .sum { margin-top: 0.5rem; border-top: 1px solid #1e293b; padding-top: 0.5rem; }
+  .sum summary { cursor: pointer; color: #94a3b8; font-size: 0.75rem; }
+  .kv-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.5rem; margin-top: 0.5rem; font-size: 0.72rem; }
+  .kv-grid span { color: #94a3b8; }
+  .kv-grid code { color: #e2e8f0; word-break: break-all; }
 </style>

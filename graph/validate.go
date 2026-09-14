@@ -133,9 +133,10 @@ func (vd *Validator) Validate() Validation {
 			if src.Kind == KindOutbound && src.Protocol != dst.Protocol {
 				v.err("protocol_mismatch", e.ID, "протоколы каскада не совпадают: %s (%s) → %s (%s)", src.Tag, src.Protocol, dst.Tag, dst.Protocol)
 			}
-			// у целевого inbound должны быть пользователи — outbound подключается как один из них
+			// у целевого inbound должны быть креды для подключения — либо клиентский,
+			// либо служебный relay-пользователь (генерётся при сохранении)
 			in, err := ParseInboundSettings(dst.Settings)
-			if err == nil && len(in.Users) == 0 {
+			if err == nil && len(in.Users) == 0 && in.RelayUser == nil {
 				v.err("cascade_no_users", e.ID, "у целевого inbound %s нет пользователей для подключения", dst.Tag)
 			}
 		default:
@@ -226,11 +227,8 @@ func (vd *Validator) checkInbound(v *Validation, n *Node) {
 	if in.ListenPort == 0 {
 		v.err("no_listen_port", n.ID, "inbound %s: не задан listen_port", n.Tag)
 	}
-	needsUsers := n.Protocol == "vless" || n.Protocol == "vmess" || n.Protocol == "trojan" ||
-		n.Protocol == "shadowsocks" || n.Protocol == "hysteria2" || n.Protocol == "tuic"
-	if needsUsers && len(in.Users) == 0 {
-		v.err("no_users", n.ID, "inbound %s: добавьте хотя бы одного пользователя", n.Tag)
-	}
+	// Пользователи inbound'а необязательны: клиентские добавляются из вкладки «Пользователи»,
+	// а для каскадных подключений при сохранении генерится служебный relay_user.
 	// TLS обязателен для QUIC-протоколов; для остальных — опционален.
 	if (n.Protocol == "hysteria2" || n.Protocol == "tuic") && (in.TLS == nil || !in.TLS.Enabled) {
 		v.err("tls_required", n.ID, "inbound %s: %s требует TLS", n.Tag, n.Protocol)
