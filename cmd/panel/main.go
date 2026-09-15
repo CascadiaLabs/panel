@@ -10,7 +10,12 @@ import (
 	"github.com/CascadiaLabs/panel/db"
 )
 
+// version задаётся при сборке (-X main.version=...); dev-сборки — "dev".
+var version = "dev"
+
 func main() {
+	log.Printf("Cascadia Panel %s", version)
+
 	cfg := config.Load()
 
 	store, err := db.New(cfg.DBPath)

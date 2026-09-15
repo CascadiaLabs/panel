@@ -112,6 +112,23 @@ func TestLoginLimiter(t *testing.T) {
 	}
 }
 
+func TestLoginLimiterSweepsExpired(t *testing.T) {
+	now := time.Now()
+	l := NewLoginLimiter(2, time.Minute)
+	l.now = func() time.Time { return now }
+	for _, ip := range []string{"1.1.1.1", "2.2.2.2"} {
+		l.Allow(ip)
+	}
+	if len(l.buckets) != 2 {
+		t.Fatalf("want 2 buckets, got %d", len(l.buckets))
+	}
+	now = now.Add(2 * time.Minute)
+	l.Allow("3.3.3.3")
+	if len(l.buckets) != 1 {
+		t.Fatalf("expired buckets must be swept, got %d", len(l.buckets))
+	}
+}
+
 func TestTLSDetection(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	if IsTLS(req) {

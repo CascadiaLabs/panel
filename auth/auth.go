@@ -111,16 +111,19 @@ type LoginLimiter struct {
 	max    int
 	window time.Duration
 
-	now     func() time.Time
-	buckets map[string][]time.Time
+	now       func() time.Time
+	buckets   map[string][]time.Time
+	lastSweep time.Time
 }
 
 func NewLoginLimiter(max int, window time.Duration) *LoginLimiter {
-	return &LoginLimiter{max: max, window: window, now: time.Now, buckets: map[string][]time.Time{}}
+	now := time.Now()
+	return &LoginLimiter{max: max, window: window, now: func() time.Time { return now }, buckets: map[string][]time.Time{}, lastSweep: now}
 }
 
 func (l *LoginLimiter) Allow(ip string) bool {
 	now := l.now()
+	l.sweep(now)
 	cutoff := now.Add(-l.window)
 	hits := l.buckets[ip][:0]
 	for _, t := range l.buckets[ip] {
@@ -128,12 +131,31 @@ func (l *LoginLimiter) Allow(ip string) bool {
 			hits = append(hits, t)
 		}
 	}
-	l.buckets[ip] = hits
+	if len(hits) == 0 {
+		delete(l.buckets, ip)
+		hits = nil
+	}
 	if len(hits) >= l.max {
+		l.buckets[ip] = hits
 		return false
 	}
 	l.buckets[ip] = append(hits, now)
 	return true
+}
+
+// sweep полностью удаляет протухшие бакеты не чаще раза за window, чтобы
+// карта не росла бесконечно от брутфорса с разных IP.
+func (l *LoginLimiter) sweep(now time.Time) {
+	if now.Sub(l.lastSweep) < l.window {
+		return
+	}
+	l.lastSweep = now
+	cutoff := now.Add(-l.window)
+	for ip, hits := range l.buckets {
+		if !hits[len(hits)-1].After(cutoff) {
+			delete(l.buckets, ip)
+		}
+	}
 }
 
 func (l *LoginLimiter) Reset(ip string) {

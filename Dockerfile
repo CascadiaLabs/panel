@@ -1,4 +1,4 @@
-FROM node:20-alpine AS web
+FROM --platform=$BUILDPLATFORM node:20-alpine AS web
 WORKDIR /app/web
 COPY web/package*.json ./
 RUN npm ci
@@ -13,7 +13,8 @@ COPY . .
 # Fresh frontend from the web stage must win over any stale api/static in the repo.
 COPY --from=web /app/web/dist ./api/static
 ARG TARGETOS TARGETARCH
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /app/panel ./cmd/panel
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w -X main.version=$VERSION" -o /app/panel ./cmd/panel
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates

@@ -145,3 +145,5 @@ vite.config.ts.timestamp-*
 # Browser regression artifacts
 web/test-results/
 web/playwright-report/
+
+*.db
