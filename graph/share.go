@@ -56,9 +56,7 @@ func buildShareLink(el Node, in InboundSettings, host string, c PanelCreds) (str
 		if c.Flow != "" {
 			q.Set("flow", c.Flow)
 		}
-		if tr := in.Transport; tr != nil {
-			applyTransport(q, tr)
-		}
+		applyTransport(q, in.Transport)
 		return "vless://" + c.UUID + "@" + addr + "?" + q.Encode() + "#" + frag, nil
 
 	case "vmess":
@@ -100,9 +98,7 @@ func buildShareLink(el Node, in InboundSettings, host string, c PanelCreds) (str
 	case "trojan":
 		q := url.Values{}
 		applyClientTLS(q, c, host, in)
-		if tr := in.Transport; tr != nil {
-			applyTransport(q, tr)
-		}
+		applyTransport(q, in.Transport)
 		return "trojan://" + c.Password + "@" + addr + "?" + q.Encode() + "#" + frag, nil
 
 	case "shadowsocks":
@@ -221,8 +217,12 @@ func applyVMessTLS(payload map[string]any, host string, in InboundSettings) {
 }
 
 // applyTransport заполняет query-параметры транспорта для vless/trojan.
+// Пусто/наивный транспорт (default tcp) задаём явно: без `type` клиенты вроде
+// v2rayTun строго-парсят ссылку и считают подписку пустой ("transport method cannot be empty").
 func applyTransport(q url.Values, tr *TransportSettings) {
-	if tr == nil || tr.Type == "" {
+	if tr == nil || tr.Type == "" || tr.Type == "tcp" {
+		q.Set("type", "tcp")
+		q.Set("headerType", "none")
 		return
 	}
 	switch tr.Type {

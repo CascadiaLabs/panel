@@ -67,6 +67,30 @@ func TestShareLinksVlessRealityWS(t *testing.T) {
 	}
 }
 
+func TestShareLinksVlessDefaultTCP(t *testing.T) {
+	// регрессия: inbound без транспорта (tcp) обязан явно задавать type/headerType —
+	// v2rayTun иначе создаёт пустую подписку ("transport method cannot be empty").
+	raw := mustJSON(t, map[string]any{
+		"listen_port": 44300, "public_host": "d.example.com",
+		"users": []map[string]any{{"name": "x", "uuid": testUUID}},
+		"tls":   map[string]any{"enabled": true, "server_name": "d.example.com"},
+	})
+	state := stateWithInbound("vless", nil)
+	state.Nodes[0].Settings = raw
+	links, err := ShareLinks(state, nil, creds())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 {
+		t.Fatalf("want 1 link, got %d", len(links))
+	}
+	for _, want := range []string{"type=tcp", "headerType=none"} {
+		if !strings.Contains(links[0], want) {
+			t.Errorf("default tcp link must set type=tcp&headerType=none, got: %s", links[0])
+		}
+	}
+}
+
 func TestShareLinksSSTrojanHysteria2(t *testing.T) {
 	ss := mustJSON(t, map[string]any{
 		"listen_port": 8388, "public_host": "a.example.com", "method": "2022-blake3-aes-128-gcm",
