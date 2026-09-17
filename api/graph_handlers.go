@@ -240,6 +240,10 @@ func (h *Handler) deployGraph(r *http.Request, id string) ([]deployReport, bool,
 		return nil, false, err
 	}
 
+	// вшиваем активных клиентов панели: новый entry-inbound без юзера в стейте
+	// дал бы ноде конфиг без uuid из подписки
+	state = h.store.InjectPanelUsers(id, state)
+
 	configs, err := graph.Generate(state, h.physNodes(r))
 	if err != nil {
 		return nil, false, err

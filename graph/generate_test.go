@@ -180,6 +180,45 @@ func TestGenerateRealityMirror(t *testing.T) {
 	}
 }
 
+// TestGenerateRealityHandshakePortDefault — при незаданном handshake_port
+// в конфиг уходит 443, а не 0.
+func TestGenerateRealityHandshakePortDefault(t *testing.T) {
+	priv, _, _ := mustRealityPair(t)
+	st := State{
+		Nodes: []Node{
+			{ID: "in1", NodeID: "n1", Kind: KindInbound, Protocol: "vless", Tag: "in1",
+				Settings: mustJSON(t, InboundSettings{
+					ListenPort: 443,
+					Users:      []InboundUser{{Name: "u", UUID: "u1"}},
+					TLS: &InboundTLS{Enabled: true, Reality: &RealityIn{
+						Enabled:         true,
+						PrivateKey:      priv,
+						ShortIDs:        []string{"ab"},
+						HandshakeServer: "www.apple.com",
+					}},
+				})},
+			{ID: "o1", NodeID: "n1", Kind: KindOutbound, Protocol: "direct", Tag: "o1", Exit: true},
+		},
+		Edges: []Edge{{SourceID: "in1", TargetID: "o1"}},
+	}
+	phys := []PhysNode{{ID: "n1", Name: "1", GRPCURL: "n1:6237"}}
+
+	configs, err := Generate(st, phys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(configs["n1"]), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	in := cfg["inbounds"].([]any)[0].(map[string]any)
+	reality := in["tls"].(map[string]any)["reality"].(map[string]any)
+	hs := reality["handshake"].(map[string]any)
+	if hs["server_port"].(float64) != 443 {
+		t.Fatalf("handshake server_port должен быть 443, got: %v", hs)
+	}
+}
+
 // TestGenerateRulesFromEdges — правила собираются из цепочек inbound→rule→target.
 func TestGenerateRulesFromEdges(t *testing.T) {
 	priv, _, _ := mustRealityPair(t)

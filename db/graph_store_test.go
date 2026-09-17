@@ -79,6 +79,60 @@ func TestGraphRoundtrip(t *testing.T) {
 
 // SaveGraphState докидывает служебный relay_user каждому inbound без него
 // и сохраняет уже существующий.
+//
+// InjectPanelUsers вшивает активных VPN-юзеров графа во все entry-inbound —
+// новый inbound после создания содержит uuid из подписки.
+func TestInjectPanelUsersIntoNewInbound(t *testing.T) {
+	s := newTestStore(t)
+	phys := seedNode(t, s, "node-1")
+	g, err := s.CreateGraph("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := s.CreatePanelUser("honey", g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := graph.State{
+		Nodes: []graph.Node{
+			{ID: "in1", NodeID: phys.ID, Kind: "inbound", Protocol: "vless", Tag: "test",
+				Settings: []byte(`{"listen_port":40000}`), Entry: true},
+			{ID: "out1", NodeID: phys.ID, Kind: "outbound", Protocol: "direct", Tag: "out1", Settings: []byte(`{}`)},
+		},
+	}
+	state = s.InjectPanelUsers(g.ID, state)
+	in := mustParseInbound(t, state.Nodes[0].Settings)
+	users := in.Users
+	// юзер панели вшит
+	var found bool
+	for _, uu := range users {
+		if uu.UUID == u.UUID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("uuid %s не вшит в inbound, users: %+v", u.UUID, users)
+	}
+	// не-entry inbound не получает юзеров
+	nonEntry := graph.State{Nodes: []graph.Node{
+		{ID: "in2", NodeID: phys.ID, Kind: "inbound", Protocol: "vless", Tag: "internal",
+			Settings: []byte(`{"listen_port":50000}`), Entry: false},
+	}}
+	if st2 := s.InjectPanelUsers(g.ID, nonEntry); len(mustParseInbound(t, st2.Nodes[0].Settings).Users) != 0 {
+		t.Fatalf("не-entry inbound получил юзеров")
+	}
+}
+
+func mustParseInbound(t *testing.T, raw []byte) graph.InboundSettings {
+	t.Helper()
+	in, err := graph.ParseInboundSettings(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return in
+}
+
 func TestGraphSaveGeneratesRelayUser(t *testing.T) {
 	s := newTestStore(t)
 	phys := seedNode(t, s, "node-1")

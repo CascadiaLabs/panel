@@ -71,6 +71,8 @@ func (s *Store) SaveGraphState(graphID string, state graph.State) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	state = s.InjectPanelUsers(graphID, state)
+
 	if _, err := tx.Exec(`DELETE FROM graph_edges WHERE graph_id = ?`, graphID); err != nil {
 		return err
 	}
@@ -109,6 +111,23 @@ func (s *Store) SaveGraphState(graphID string, state graph.State) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// InjectPanelUsers вшивает активных VPN-юзеров графа во все entry-inbound.
+// Вызывается при каждом сохранении/деплое графа, чтобы вновь созданные inbound
+// сразу содержали клиентов панели (иначе подписка и нода расходятся по uuid).
+func (s *Store) InjectPanelUsers(graphID string, state graph.State) graph.State {
+	users, err := s.ListPanelUsers()
+	if err != nil {
+		return state
+	}
+	for _, u := range users {
+		if u.GraphID != graphID || !u.Enabled {
+			continue
+		}
+		state = graph.InjectUsersIntoState(state, graph.PanelCreds{Name: u.Name, UUID: u.UUID, Password: u.Password, Flow: u.Flow, Remark: u.Remark})
+	}
+	return state
 }
 
 // LoadGraphState возвращает элементы и рёбра графа.

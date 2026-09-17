@@ -418,9 +418,13 @@ func inboundTLSBlock(in InboundSettings) map[string]any {
 		m["alpn"] = in.TLS.ALPN
 	}
 	if in.TLS.Reality != nil && in.TLS.Reality.Enabled {
+		hsPort := in.TLS.Reality.HandshakePort
+		if hsPort == 0 {
+			hsPort = 443 // дефолт reality handshake, если не задан
+		}
 		m["reality"] = map[string]any{
 			"enabled":     true,
-			"handshake":   map[string]any{"server": in.TLS.Reality.HandshakeServer, "server_port": in.TLS.Reality.HandshakePort},
+			"handshake":   map[string]any{"server": in.TLS.Reality.HandshakeServer, "server_port": hsPort},
 			"private_key": in.TLS.Reality.PrivateKey,
 			"short_id":    in.TLS.Reality.ShortIDs,
 		}
