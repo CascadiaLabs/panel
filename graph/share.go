@@ -40,11 +40,13 @@ func ShareLinks(st State, phys []PhysNode, c PanelCreds) ([]string, error) {
 }
 
 func buildShareLink(el Node, in InboundSettings, host string, c PanelCreds) (string, error) {
-	frag := c.Name
-	if c.Remark != "" {
-		frag = c.Remark
+	// фрагмент — имя профиля у клиента: тег entry-inbound из графа (inbound-1, KZ-1),
+	// а не имя пользователя, чтобы у одной подписки было несколько различимых входов.
+	frag := el.Tag
+	if frag == "" {
+		frag = c.Name
 	}
-	// фрагмент — имя профиля у клиента; не-ascii кодируем как в реальных панелях
+	// не-ascii кодируем как в реальных панелях
 	frag = url.QueryEscape(strings.ReplaceAll(frag, "#", ""))
 	addr := host + ":" + itoa(in.ListenPort)
 
