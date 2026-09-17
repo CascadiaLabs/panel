@@ -100,7 +100,14 @@ func (h *Handler) SaveGraph(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		state := *body.State
+		// SaveGraphState добавляет отсутствующий служебный relay_user в inbound.
+		// Валидируем сохранённое состояние, иначе первый ответ после сохранения
+		// ошибочно сообщает, что каскадному inbound не хватает пользователей.
+		state, err := h.store.LoadGraphState(id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		vd := graph.Validator{State: state, Nodes: h.physNodes(r)}
 		val := vd.Validate()
 		validation = &val
