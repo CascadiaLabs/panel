@@ -1,13 +1,18 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/CascadiaLabs/panel/api"
 	"github.com/CascadiaLabs/panel/auth"
 	"github.com/CascadiaLabs/panel/config"
 	"github.com/CascadiaLabs/panel/db"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // version задаётся при сборке (-X main.version=...); dev-сборки — "dev".
@@ -15,6 +20,44 @@ var version = "dev"
 
 func main() {
 	log.Printf("Cascadia Panel %s", version)
+
+	// CLI-режим: docker exec panel panel reset-password [новый пароль].
+	// Без пароля — генерируется случайный, печатается в консоль.
+	if len(os.Args) > 2 && os.Args[1] == "panel" && os.Args[2] == "reset-password" {
+		cfg := config.Load()
+		store, err := db.New(cfg.DBPath)
+		if err != nil {
+			log.Fatalf("reset-password: %v", err)
+		}
+		pw := ""
+		if len(os.Args) > 3 {
+			pw = os.Args[3]
+		}
+		if pw == "" {
+			b := make([]byte, 18)
+			if _, err := rand.Read(b); err != nil {
+				log.Fatalf("reset-password: %v", err)
+			}
+			pw = base64.RawURLEncoding.EncodeToString(b)
+		}
+		admin, err := store.GetUserByUsername("admin")
+		if err != nil {
+			log.Fatalf("reset-password: admin not found: %v", err)
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+		if err != nil {
+			log.Fatalf("reset-password: %v", err)
+		}
+		if err := store.UpdateUserPassword(admin.ID, string(hash)); err != nil {
+			log.Fatalf("reset-password: %v", err)
+		}
+		// Все сессии admin инвалидируются (keepID пустой — удаляем все).
+		if err := store.DeleteUserSessionsExcept(admin.ID, ""); err != nil {
+			log.Fatalf("reset-password: %v", err)
+		}
+		fmt.Println(pw)
+		return
+	}
 
 	cfg := config.Load()
 
