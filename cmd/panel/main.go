@@ -21,7 +21,7 @@ var version = "dev"
 func main() {
 	log.Printf("Cascadia Panel %s", version)
 
-	// CLI-режим: docker exec panel panel reset-password [новый пароль].
+	// CLI-режим: docker exec cascadia-panel /app/panel panel reset-password [новый пароль].
 	// Без пароля — генерируется случайный, печатается в консоль.
 	if len(os.Args) > 2 && os.Args[1] == "panel" && os.Args[2] == "reset-password" {
 		cfg := config.Load()

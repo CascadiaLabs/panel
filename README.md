@@ -11,7 +11,7 @@ sudo bash -c "$(curl -sL https://github.com/CascadiaLabs/install/raw/main/panel.
 ```
 
 Поднимает Docker-контейнер на :2083. Логин `admin`, пароль печатается в лог
-при первом старте (`docker logs panel 2>&1 | grep 'FIRST LOGIN'`) или
+при первом старте (`docker logs cascadia-panel 2>&1 | grep 'FIRST LOGIN'`) или
 задаётся `PANEL_ADMIN_PASSWORD` в `.env` до первого запуска.
 
 Переменные окружения — см. [.env.example](.env.example).
@@ -59,7 +59,7 @@ sudo bash -c "$(curl -sL https://github.com/CascadiaLabs/install/raw/main/panel.
 Имя git-тега = имя Docker-тега: пуш тега `1a` публикует
 `ghcr.io/cascadialabs/panel:1a`; `:latest` всегда указывает на `main`. Версия
 вшита в бинарник и печатается при старте:
-`docker logs panel 2>&1 | head -1` → `Cascadia Panel 1a`.
+`docker logs cascadia-panel 2>&1 | head -1` → `Cascadia Panel 1a`.
 
 Поставить конкретную версию:
 
