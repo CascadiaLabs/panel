@@ -59,7 +59,8 @@ func TestShareLinksVlessRealityWS(t *testing.T) {
 		"sid=abcd1234",
 		"type=ws",
 		"path=%2Fws",
-		"#%D0%98%D0%B2%D0%B0%D0%BD+%C2%B7+VIP",
+		// имя профиля — тег inbound из графа, а не имя/remark пользователя
+		"#in-1",
 	} {
 		if !strings.Contains(u, want) {
 			t.Errorf("link %q missing %q", u, want)
@@ -111,7 +112,7 @@ func TestShareLinksSSTrojanHysteria2(t *testing.T) {
 	ssState := stateWithInbound("shadowsocks", nil)
 	ssState.Nodes[0].Settings = ss
 	links, _ := ShareLinks(ssState, nil, creds())
-	if len(links) != 1 || !strings.HasPrefix(links[0], "ss://") || !strings.HasSuffix(links[0], "#%D0%98%D0%B2%D0%B0%D0%BD+%C2%B7+VIP") {
+	if len(links) != 1 || !strings.HasPrefix(links[0], "ss://") || !strings.HasSuffix(links[0], "#in-1") {
 		t.Errorf("ss link wrong: %v", links)
 	}
 
