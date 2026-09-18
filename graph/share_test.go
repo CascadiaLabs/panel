@@ -92,6 +92,32 @@ func TestShareLinksVlessDefaultTCP(t *testing.T) {
 	}
 }
 
+func TestShareLinksOrdersInboundsBySubscriptionOrder(t *testing.T) {
+	settings := func(order int) []byte {
+		return mustJSON(t, map[string]any{
+			"listen_port": 443, "public_host": "vpn.example.com",
+			"subscription_order": order,
+		})
+	}
+	state := State{Nodes: []Node{
+		{ID: "third", Kind: KindInbound, Protocol: "vless", Tag: "z-third", Entry: true, Settings: settings(30)},
+		{ID: "first", Kind: KindInbound, Protocol: "vless", Tag: "m-first", Entry: true, Settings: settings(10)},
+		{ID: "second", Kind: KindInbound, Protocol: "vless", Tag: "a-second", Entry: true, Settings: settings(20)},
+	}}
+	links, err := ShareLinks(state, nil, creds())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(links), 3; got != want {
+		t.Fatalf("want %d links, got %d", want, got)
+	}
+	for i, tag := range []string{"#m-first", "#a-second", "#z-third"} {
+		if !strings.HasSuffix(links[i], tag) {
+			t.Errorf("link %d: want suffix %q, got %q", i, tag, links[i])
+		}
+	}
+}
+
 func TestShareLinksSSTrojanHysteria2(t *testing.T) {
 	ss := mustJSON(t, map[string]any{
 		"listen_port": 8388, "public_host": "a.example.com", "method": "2022-blake3-aes-128-gcm",

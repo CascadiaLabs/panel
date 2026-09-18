@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 )
 
@@ -15,7 +16,13 @@ func ShareLinks(st State, phys []PhysNode, c PanelCreds) ([]string, error) {
 	for _, p := range phys {
 		physByID[p.ID] = p
 	}
-	var links []string
+	type subscriptionInbound struct {
+		node  Node
+		in    InboundSettings
+		host  string
+		order int
+	}
+	var inbounds []subscriptionInbound
 	for _, el := range st.Nodes {
 		if el.Kind != KindInbound || !el.Entry {
 			continue
@@ -30,7 +37,24 @@ func ShareLinks(st State, phys []PhysNode, c PanelCreds) ([]string, error) {
 				host = p.Host()
 			}
 		}
-		link, err := buildShareLink(el, in, host, c)
+		inbounds = append(inbounds, subscriptionInbound{node: el, in: in, host: host, order: in.SubscriptionOrder})
+	}
+
+	// Порядок slice Nodes не является пользовательским контрактом. Сортируем по
+	// явно заданному приоритету, а при равенстве — детерминированно по тегу и ID.
+	sort.SliceStable(inbounds, func(i, j int) bool {
+		if inbounds[i].order != inbounds[j].order {
+			return inbounds[i].order < inbounds[j].order
+		}
+		if inbounds[i].node.Tag != inbounds[j].node.Tag {
+			return inbounds[i].node.Tag < inbounds[j].node.Tag
+		}
+		return inbounds[i].node.ID < inbounds[j].node.ID
+	})
+
+	links := make([]string, 0, len(inbounds))
+	for _, entry := range inbounds {
+		link, err := buildShareLink(entry.node, entry.in, entry.host, c)
 		if err != nil {
 			return nil, err
 		}

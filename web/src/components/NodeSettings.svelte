@@ -105,6 +105,11 @@
 
     {#if graphNode.kind === 'inbound'}
       <div class="field">
+        <label for="el-subscription-order">Порядок в подписке</label>
+        <input id="el-subscription-order" type="number" step="1" bind:value={s.subscription_order} oninput={touch} />
+        <p class="hint">Меньшее число отображается раньше. Одинаковые значения сортируются по тегу.</p>
+      </div>
+      <div class="field">
         <label for="el-port">Listen port</label>
         <input id="el-port" type="number" min="1" max="65535" bind:value={s.listen_port} oninput={touch} />
       </div>
