@@ -129,12 +129,15 @@ type InboundTLS struct {
 }
 
 type InboundSettings struct {
-	ListenPort uint16             `json:"listen_port"`
-	PublicHost string             `json:"public_host,omitempty"` // адрес для каскадных подключений; "" → хост gRPC
-	Users      []InboundUser      `json:"users"`
-	RelayUser  *InboundUser       `json:"relay_user,omitempty"` // служебные креды для каскадных подключений (генерятся при сохранении)
-	TLS        *InboundTLS        `json:"tls,omitempty"`
-	Transport  *TransportSettings `json:"transport,omitempty"`
+	ListenPort uint16 `json:"listen_port"`
+	PublicHost string `json:"public_host,omitempty"` // адрес для каскадных подключений; "" → хост gRPC
+	// SubscriptionOrder задаёт позицию entry-inbound в подписке: меньшие значения идут раньше.
+	// Ноль — обычный приоритет; при одинаковом значении используется тег.
+	SubscriptionOrder int                `json:"subscription_order,omitempty"`
+	Users             []InboundUser      `json:"users"`
+	RelayUser         *InboundUser       `json:"relay_user,omitempty"` // служебные креды для каскадных подключений (генерятся при сохранении)
+	TLS               *InboundTLS        `json:"tls,omitempty"`
+	Transport         *TransportSettings `json:"transport,omitempty"`
 
 	// протоколо-специфичные
 	Method            string `json:"method,omitempty"`             // shadowsocks

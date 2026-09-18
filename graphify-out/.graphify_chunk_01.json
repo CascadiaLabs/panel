@@ -1,0 +1,353 @@
+{
+  "nodes": [
+    {
+      "id": "workflows_docker_docker_image_build",
+      "label": "Docker Image Build",
+      "file_type": "concept",
+      "source_file": ".github/workflows/docker.yml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "workflows_docker_github_container_registry",
+      "label": "GitHub Container Registry",
+      "file_type": "concept",
+      "source_file": ".github/workflows/docker.yml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "workflows_docker_multi_architecture_images",
+      "label": "Multi-Architecture Images",
+      "file_type": "concept",
+      "source_file": ".github/workflows/docker.yml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_cascadia_panel",
+      "label": "Cascadia Panel",
+      "file_type": "concept",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_cascade_node_management",
+      "label": "Cascade Node Management",
+      "file_type": "concept",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_cascade_graph_editor",
+      "label": "Cascade Graph Editor",
+      "file_type": "concept",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_sing_box_configuration",
+      "label": "sing-box Configuration",
+      "file_type": "concept",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_grpc_configuration_deployment",
+      "label": "gRPC Configuration Deployment",
+      "file_type": "concept",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_authentication",
+      "label": "Authentication",
+      "file_type": "concept",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_release_versioning",
+      "label": "Release Versioning",
+      "file_type": "concept",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_static_go_binary",
+      "label": "Static Go Binary",
+      "file_type": "rationale",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "A single static Go binary with an embedded frontend avoids Node.js runtime processes and keeps the panel suitable for low-resource VPS hosts."
+    },
+    {
+      "id": "static_index_production_frontend_entrypoint",
+      "label": "Production Frontend Entrypoint",
+      "file_type": "document",
+      "source_file": "api/static/index.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "compose_panel_panel_service",
+      "label": "Panel Service",
+      "file_type": "concept",
+      "source_file": "compose.yml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "compose_panel_persistent_panel_data",
+      "label": "Persistent Panel Data",
+      "file_type": "concept",
+      "source_file": "compose.yml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "compose_panel_resource_limits",
+      "label": "Panel Resource Limits",
+      "file_type": "rationale",
+      "source_file": "compose.yml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "The Compose deployment caps the panel at 0.25 CPU and 64 MB memory, reflecting its low-resource operating target."
+    },
+    {
+      "id": "web_index_development_frontend_entrypoint",
+      "label": "Development Frontend Entrypoint",
+      "file_type": "document",
+      "source_file": "web/index.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "src_app_svelte_application_shell",
+      "label": "Svelte Application Shell",
+      "file_type": "document",
+      "source_file": "web/src/app.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    }
+  ],
+  "edges": [
+    {
+      "source": "workflows_docker_docker_image_build",
+      "target": "workflows_docker_github_container_registry",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".github/workflows/docker.yml",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "workflows_docker_docker_image_build",
+      "target": "workflows_docker_multi_architecture_images",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".github/workflows/docker.yml",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "readme_cascadia_panel",
+      "target": "readme_cascade_node_management",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "readme_cascadia_panel",
+      "target": "readme_cascade_graph_editor",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "readme_cascade_graph_editor",
+      "target": "readme_sing_box_configuration",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "readme_sing_box_configuration",
+      "target": "readme_grpc_configuration_deployment",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "readme_cascadia_panel",
+      "target": "readme_authentication",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "readme_release_versioning",
+      "target": "workflows_docker_docker_image_build",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "readme_static_go_binary",
+      "target": "readme_cascadia_panel",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "compose_panel_panel_service",
+      "target": "compose_panel_persistent_panel_data",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "compose.yml",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "compose_panel_resource_limits",
+      "target": "compose_panel_panel_service",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "compose.yml",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "static_index_production_frontend_entrypoint",
+      "target": "readme_static_go_binary",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "api/static/index.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "web_index_development_frontend_entrypoint",
+      "target": "src_app_svelte_application_shell",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "web/index.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "static_index_production_frontend_entrypoint",
+      "target": "web_index_development_frontend_entrypoint",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "api/static/index.html",
+      "source_location": null,
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "readme_cascade_configuration_flow",
+      "label": "Cascade Configuration Flow",
+      "nodes": [
+        "readme_cascade_node_management",
+        "readme_cascade_graph_editor",
+        "readme_sing_box_configuration",
+        "readme_grpc_configuration_deployment"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md"
+    }
+  ],
+  "input_tokens": 0,
+  "output_tokens": 0
+}
