@@ -137,16 +137,69 @@ func TestGenerateBalancerInboundCandidates(t *testing.T) {
 	}
 }
 
+func TestGenerateBalancerToInboundSameNode(t *testing.T) {
+	st, phys := shorthandCascade(t)
+	st.Nodes = append(st.Nodes,
+		Node{ID: "bal", NodeID: "A", Kind: KindBalancer, Protocol: "selector", Tag: "bal",
+			Settings: mustJSON(t, BalancerSettings{Default: "local"})},
+		Node{ID: "local", NodeID: "A", Kind: KindInbound, Protocol: "trojan", Tag: "local",
+			Settings: mustJSON(t, InboundSettings{ListenPort: 8444, Users: []InboundUser{{Password: "local-secret"}}})},
+	)
+	st.Edges = []Edge{
+		{SourceID: "a", TargetID: "bal"},
+		{SourceID: "bal", TargetID: "local"},
+		{SourceID: "local", TargetID: "b"},
+	}
+	before := string(mustJSON(t, st))
+	res := (&Validator{State: st, Nodes: phys}).Validate()
+	if res.HasErrors() {
+		t.Fatalf("same-node balancer relay must validate: %+v", res.Errors)
+	}
+	configs, err := Generate(st, phys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := decodeConfig(t, configs["A"])
+	bal := configOutbound(t, a, "bal")
+	members := bal["outbounds"].([]any)
+	if len(members) != 1 {
+		t.Fatalf("balancer members: %v", members)
+	}
+	relayTag := members[0].(string)
+	if relayTag == "local" {
+		t.Fatal("balancer member must be a generated relay outbound")
+	}
+	if bal["default"] != relayTag {
+		t.Fatalf("selector default was not remapped: %v", bal)
+	}
+	relay := configOutbound(t, a, relayTag)
+	if relay["type"] != "trojan" || relay["server"] != "source.example" || relay["server_port"] != float64(8444) || relay["password"] != "local-secret" {
+		t.Fatalf("local relay did not mirror target inbound: %v", relay)
+	}
+	rules := a["route"].(map[string]any)["rules"].([]any)
+	var localRule map[string]any
+	for _, raw := range rules {
+		rule := raw.(map[string]any)
+		if rule["inbound"].([]any)[0] == "local" {
+			localRule = rule
+			break
+		}
+	}
+	if localRule == nil || configOutbound(t, a, localRule["outbound"].(string))["server"] != "target.example" {
+		t.Fatalf("local inbound must continue to the next cascade: %v", localRule)
+	}
+	again, err := Generate(st, phys)
+	if err != nil || !reflect.DeepEqual(configs, again) || string(mustJSON(t, st)) != before {
+		t.Fatalf("generation was not deterministic/nonmutating: %v", err)
+	}
+}
+
 func TestShorthandValidation(t *testing.T) {
 	cases := []struct {
 		name, code string
 		change     func(*State)
 	}{
 		{"same node inbound", "cascade_same_node", func(st *State) { st.Nodes[1].NodeID = "A" }},
-		{"same node balancer", "cascade_same_node", func(st *State) {
-			st.Nodes[0].Kind, st.Nodes[0].Protocol, st.Nodes[0].Settings = KindBalancer, "urltest", nil
-			st.Nodes[1].NodeID = "A"
-		}},
 		{"cycle", "cycle", func(st *State) {
 			st.Nodes[1].Exit = false
 			st.Edges = append(st.Edges, Edge{SourceID: "b", TargetID: "a"})

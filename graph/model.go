@@ -7,7 +7,9 @@
 //
 //	  - inbound → rule|balancer|outbound: только в пределах одной физической ноды;
 //	  - rule → outbound|balancer, balancer → outbound: там же;
-//	  - inbound|balancer → inbound: сокращённый каскад на ДРУГУЮ ноду;
+//	  - balancer → inbound: сокращённый каскад на любую ноду, включая ту же;
+//	    outbound автоматически выводится из целевого inbound;
+//	  - inbound|rule → inbound: сокращённый каскад только на ДРУГУЮ ноду;
 //	    outbound автоматически выводится из целевого inbound;
 //	  - outbound → inbound: явный каскад на ДРУГУЮ ноду (протоколы должны совпадать);
 //	  - entry=true у inbound: вход от клиента; exit=true у inbound: прямой выход

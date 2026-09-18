@@ -145,6 +145,23 @@ test('inbound on node A connects directly to inbound on node B without outbound'
   expect(errors).toEqual([]);
 });
 
+test('balancer connects to inbound on the same physical node', async ({ page }) => {
+  const states = {};
+  const errors = await openEditor(page, states);
+  await page.getByRole('button', { name: '+ inbound', exact: true }).click();
+  await page.locator('aside.panel header').getByRole('button', { name: '×', exact: true }).click();
+  await page.getByRole('button', { name: '+ balancer', exact: true }).click();
+  await page.locator('aside.panel header').getByRole('button', { name: '×', exact: true }).click();
+  await page.waitForTimeout(300);
+  const source = page.locator('.svelte-flow__node-cascade .card.kind-balancer .svelte-flow__handle.source');
+  const target = page.locator('.svelte-flow__node-cascade .card.kind-inbound .svelte-flow__handle.target');
+  await dragConnection(page, source, target, () => states.existing.edges.length === 1);
+  const inbound = states.existing.nodes.find(n => n.kind === 'inbound');
+  const balancer = states.existing.nodes.find(n => n.kind === 'balancer');
+  expect(states.existing.edges[0]).toMatchObject({ source_id: balancer.id, target_id: inbound.id });
+  expect(errors).toEqual([]);
+});
+
 test('issue list shows messages and focuses the related element', async ({ page }) => {
   const states = {};
   const errors = await openEditor(page, states, () => ({

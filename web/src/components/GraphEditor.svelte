@@ -232,7 +232,11 @@
   // --- соединения ---
   // Матрица валидных source-kind → target-kind (клиентская проверка).
   function canConnect(source: GraphNode, target: GraphNode): string | null {
-    if (target.kind === 'inbound' && ['inbound', 'balancer', 'rule'].includes(source.kind)) {
+    if (target.kind === 'inbound' && source.kind === 'balancer') {
+      if (gedges.some(e => e.source_id === source.id && e.target_id === target.id)) return 'Соединение уже существует';
+      return null;
+    }
+    if (target.kind === 'inbound' && ['inbound', 'rule'].includes(source.kind)) {
       if (source.node_id === target.node_id) return 'Каскад должен вести на другую физическую ноду';
       if (gedges.some(e => e.source_id === source.id && e.target_id === target.id)) return 'Соединение уже существует';
       return null;
@@ -434,7 +438,7 @@
       <div class="group">
         <button class="tool" onclick={onBack}>← Графы</button>
         <button class="tool" onclick={() => addNode('inbound')} title="Вход подключения (vless/vmess/trojan/shadowsocks/hysteria2/tuic). Протокол и параметры — в панели настроек элемента">+ inbound</button>
-        <button class="tool" onclick={() => addNode('outbound')} title="Выход: direct или внешний сервер вне панели (адрес и учётные данные вручную). Для каскада между своими нодами outbound не нужен — соединяйте inbound → inbound напрямую">+ outbound</button>
+        <button class="tool" onclick={() => addNode('outbound')} title="Выход: direct или внешний сервер вне панели (адрес и учётные данные вручную). Для каскада между физическими нодами outbound не нужен — соединяйте inbound → inbound напрямую">+ outbound</button>
         <button class="tool" onclick={() => addNode('rule')}>+ rule</button>
         <button class="tool" onclick={() => addNode('balancer')}>+ balancer</button>
       </div>

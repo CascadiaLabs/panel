@@ -125,10 +125,15 @@ func (vd *Validator) Validate() Validation {
 			vd.sameNode(&v, src, dst)
 		case src.Kind == KindBalancer && dst.Kind == KindOutbound:
 			vd.sameNode(&v, src, dst)
-		case (src.Kind == KindOutbound || src.Kind == KindInbound || src.Kind == KindBalancer || src.Kind == KindRule) && dst.Kind == KindInbound:
+		case src.Kind == KindBalancer && dst.Kind == KindInbound:
+			in, err := ParseInboundSettings(dst.Settings)
+			if err == nil && len(in.Users) == 0 && in.RelayUser == nil {
+				v.err("cascade_no_users", e.ID, "у целевого inbound %s нет пользователей для подключения", dst.Tag)
+			}
+		case (src.Kind == KindOutbound || src.Kind == KindInbound || src.Kind == KindRule) && dst.Kind == KindInbound:
 			// каскад: только на ДРУГУЮ физическую ноду
 			if src.NodeID == dst.NodeID {
-				v.err("cascade_same_node", e.ID, "каскадное ребро %s → %s должно вести на другую ноду (внутри одной ноды используйте rule/balancer)", src.Tag, dst.Tag)
+				v.err("cascade_same_node", e.ID, "каскадное ребро %s → %s должно вести на другую ноду (на одной ноде используйте balancer)", src.Tag, dst.Tag)
 			}
 			if src.Kind == KindOutbound && src.Protocol != dst.Protocol {
 				v.err("protocol_mismatch", e.ID, "протоколы каскада не совпадают: %s (%s) → %s (%s)", src.Tag, src.Protocol, dst.Tag, dst.Protocol)
