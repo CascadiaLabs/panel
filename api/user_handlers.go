@@ -20,11 +20,15 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 type userBody struct {
-	Name    *string `json:"name"`
-	GraphID string  `json:"graph_id"`
-	Remark  *string `json:"remark"`
-	Flow    *string `json:"flow"` // vless reality: xtls-rprx-vision
-	Enabled *bool   `json:"enabled"`
+	Name            *string `json:"name"`
+	GraphID         string  `json:"graph_id"`
+	Remark          *string `json:"remark"`
+	Flow            *string `json:"flow"` // vless reality: xtls-rprx-vision
+	Enabled         *bool   `json:"enabled"`
+	UsedUpload      *int64  `json:"used_upload"`
+	UsedDownload    *int64  `json:"used_download"`
+	TotalTraffic    *int64  `json:"total_traffic"`
+	ExpireTime      *int64  `json:"expire_time"`
 }
 
 // userOpResponse — ответ мутирующих операций: пользователь + результат деплоя
@@ -118,6 +122,19 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	if body.Enabled != nil {
 		u.Enabled = *body.Enabled
 	}
+	// Обновляем трафик, если переданы новые значения
+	if body.UsedUpload != nil {
+		u.UsedUpload = *body.UsedUpload
+	}
+	if body.UsedDownload != nil {
+		u.UsedDownload = *body.UsedDownload
+	}
+	if body.TotalTraffic != nil {
+		u.TotalTraffic = *body.TotalTraffic
+	}
+	if body.ExpireTime != nil {
+		u.ExpireTime = *body.ExpireTime
+	}
 
 	// переезд на другой граф: вычистить креды из старого, вшить в новый
 	moved := false
@@ -154,6 +171,14 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 		resp = userOpResponse{User: u}
 		resp.Deploy, resp.Warning = h.runDeploy(r, u.GraphID)
+	}
+
+	// обновляем трафик, если были изменения
+	if body.UsedUpload != nil || body.UsedDownload != nil || body.TotalTraffic != nil || body.ExpireTime != nil {
+		if err := h.store.UpdatePanelUserTraffic(id, u.UsedUpload, u.UsedDownload, u.TotalTraffic, u.ExpireTime); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	if err := h.store.UpdatePanelUser(u); err != nil {

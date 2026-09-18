@@ -62,6 +62,21 @@ func NewRouter(h *Handler, authn *auth.Authenticator, sessionTTL time.Duration) 
 				r.Post("/{id}/validate", h.ValidateGraph)
 				r.Get("/{id}/configs", h.GraphConfigs)
 				r.Post("/{id}/deploy", h.DeployGraph)
+				r.Get("/{id}/subscription", h.SubscriptionInfo)
+				// Маршрутные правила
+				r.Route("/{id}/routes", func(r chi.Router) {
+					r.Get("/", h.ListRouteRules)
+					r.Post("/", h.CreateRouteRule)
+					r.Put("/{routeId}", h.UpdateRouteRule)
+					r.Delete("/{routeId}", h.DeleteRouteRule)
+				})
+			})
+
+			r.Route("/routes", func(r chi.Router) {
+				// Получение/назначение/удаление route_rule на inbound (можно несколько).
+				r.Get("/inbound/{inboundId}", h.GetInboundRouteAssignments)
+				r.Put("/inbound/{inboundId}", h.AssignInboundRoute)
+				r.Delete("/inbound/{inboundId}/{routeRuleId}", h.RemoveInboundRoute)
 			})
 
 			r.Route("/users", func(r chi.Router) {

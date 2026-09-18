@@ -26,6 +26,11 @@ export interface GraphMeta {
   name: string;
   created_at: number;
   updated_at: number;
+  subscription_name?: string;
+  subscription_desc?: string;
+  subscription_site?: string;
+  subscription_support?: string;
+  client_route?: string; // JSON-строка клиентской маршрутизации
 }
 
 export interface GraphNode {
@@ -171,6 +176,10 @@ export interface PanelUser {
   remark: string;
   sub_token: string;
   enabled: boolean;
+  used_upload: number;
+  used_download: number;
+  total_traffic: number;
+  expire_time: number;
   created_at: number;
   updated_at: number;
 }
@@ -194,7 +203,17 @@ export function createUser(body: { name: string; graph_id: string; remark?: stri
   return api<UserOpResponse>('/users', { method: 'POST', body: JSON.stringify(body) });
 }
 
-export function updateUser(id: string, body: { name?: string; remark?: string; flow?: string; graph_id?: string; enabled?: boolean }): Promise<UserOpResponse> {
+export function updateUser(id: string, body: {
+  name?: string;
+  remark?: string;
+  flow?: string;
+  graph_id?: string;
+  enabled?: boolean;
+  used_upload?: number;
+  used_download?: number;
+  total_traffic?: number;
+  expire_time?: number;
+}): Promise<UserOpResponse> {
   return api<UserOpResponse>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(body) });
 }
 
@@ -204,4 +223,65 @@ export function deleteUser(id: string): Promise<void> {
 
 export function subUrl(token: string): string {
   return `${location.origin}/sub/${token}`;
+}
+
+// Правила маршрутизации
+export interface RouteRule {
+  id: string;
+  graph_id: string;
+  name: string;
+  rules_json: string;
+  is_default: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export function listRouteRules(graphId: string): Promise<RouteRule[]> {
+  return api<RouteRule[]>(`/graphs/${graphId}/routes`);
+}
+
+export function createRouteRule(graphId: string, body: { name: string; rules_json: string }): Promise<RouteRule> {
+  return api<RouteRule>(`/graphs/${graphId}/routes`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function updateRouteRule(id: string, body: { name: string; rules_json: string }): Promise<void> {
+  return api<void>(`/graphs/routes/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+}
+
+export function deleteRouteRule(id: string): Promise<void> {
+  return api<void>(`/graphs/routes/${id}`, { method: 'DELETE' });
+}
+
+// Получение всех route-rule, назначенных на inbound (может быть несколько).
+export function getInboundRouteAssignments(inboundId: string): Promise<{ route_rule_ids: string[] }> {
+  return api<{ route_rule_ids: string[] }>(`/routes/inbound/${inboundId}`);
+}
+
+export function assignInboundRoute(inboundId: string, routeRuleId: string): Promise<void> {
+  return api<void>(`/routes/inbound/${inboundId}`, { method: 'PUT', body: JSON.stringify({ route_rule_id: routeRuleId }) });
+}
+
+export function unassignInboundRoute(inboundId: string, routeRuleId: string): Promise<void> {
+  return api<void>(`/routes/inbound/${inboundId}/${routeRuleId}`, { method: 'DELETE' });
+}
+
+// Подписка с метаданными и клиентской маршрутизацией.
+export interface SubscriptionResponse {
+  name: string;
+  desc?: string;
+  site?: string;
+  support?: string;
+  subscription_id: string;
+  links?: string[];
+  userinfo?: string;
+  profile_title?: string;
+  profile_update_interval?: number;
+  profile_web_page_url?: string;
+  support_url?: string;
+  config?: Record<string, any>; // Sing-box JSON конфиг
+  client_route?: string;
+}
+
+export function subscriptionInfo(graphId: string): Promise<SubscriptionResponse> {
+  return api<SubscriptionResponse>(`/graphs/${graphId}/subscription`);
 }

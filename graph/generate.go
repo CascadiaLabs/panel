@@ -543,20 +543,30 @@ func relayOutboundBlock(ob Node, target Node, targetPhys PhysNode) (map[string]a
 	if host == "" {
 		host = targetPhys.Host()
 	}
-	m := map[string]any{
-		"type":        ob.Protocol,
-		"tag":         ob.Tag,
-		"server":      host,
-		"server_port": in.ListenPort,
-	}
-
 	var user InboundUser
 	if in.RelayUser != nil {
 		user = *in.RelayUser
 	} else if len(in.Users) > 0 {
 		user = in.Users[0] // legacy: графы, сохранённые до введения relay_user
 	}
-	switch ob.Protocol {
+	// utls fingerprint может быть задан в настройках outbound
+	utlsFingerprint := ""
+	if out, err := ParseOutboundSettings(ob.Settings); err == nil && out.TLS != nil {
+		utlsFingerprint = out.TLS.UTLSFingerprint
+	}
+	return clientOutboundBlock(ob.Protocol, ob.Tag, in, host, user, utlsFingerprint), nil
+}
+
+// clientOutboundBlock — общий билдер клиентского outbound'а.
+// protocol/tag берутся из source, настройки — из target inbound, креды — из user.
+func clientOutboundBlock(protocol, tag string, in InboundSettings, host string, user InboundUser, utlsFingerprint string) map[string]any {
+	m := map[string]any{
+		"type":        protocol,
+		"tag":         tag,
+		"server":      host,
+		"server_port": in.ListenPort,
+	}
+	switch protocol {
 	case "vless":
 		m["uuid"] = user.UUID
 		if user.Flow != "" {
@@ -582,13 +592,6 @@ func relayOutboundBlock(ob Node, target Node, targetPhys PhysNode) (map[string]a
 			m["congestion_control"] = in.CongestionControl
 		}
 	}
-
-	// utls fingerprint может быть задан в настройках outbound
-	utlsFingerprint := ""
-	if out, err := ParseOutboundSettings(ob.Settings); err == nil && out.TLS != nil {
-		utlsFingerprint = out.TLS.UTLSFingerprint
-	}
-
 	// TLS зеркалирует inbound
 	if tls := clientTLSFromInbound(in, utlsFingerprint); tls != nil {
 		m["tls"] = tls
@@ -596,7 +599,14 @@ func relayOutboundBlock(ob Node, target Node, targetPhys PhysNode) (map[string]a
 	if tr := transportBlock(in.Transport); tr != nil {
 		m["transport"] = tr
 	}
-	return m, nil
+	return m
+}
+
+// ClientOutbound строит клиентский outbound к entry-inbound для подписки:
+// адрес/порт/TLS/transport зеркалятся из inbound, креды берутся из панели.
+func ClientOutbound(el Node, in InboundSettings, host string, c PanelCreds) map[string]any {
+	user := InboundUser{Name: c.Name, UUID: c.UUID, Password: c.Password, Flow: c.Flow}
+	return clientOutboundBlock(el.Protocol, el.Tag, in, host, user, c.Flow)
 }
 
 // clientTLSFromInbound зеркалирует TLS inbound'а на сторону клиента (outbound).

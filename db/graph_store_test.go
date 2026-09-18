@@ -28,7 +28,7 @@ func TestGraphRoundtrip(t *testing.T) {
 	s := newTestStore(t)
 	phys := seedNode(t, s, "node-1")
 
-	g, err := s.CreateGraph("test-graph")
+	g, err := s.CreateGraph(GraphCreate{Name: "test-graph"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestGraphRoundtrip(t *testing.T) {
 func TestInjectPanelUsersIntoNewInbound(t *testing.T) {
 	s := newTestStore(t)
 	phys := seedNode(t, s, "node-1")
-	g, err := s.CreateGraph("users")
+	g, err := s.CreateGraph(GraphCreate{Name: "users"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func mustParseInbound(t *testing.T, raw []byte) graph.InboundSettings {
 func TestGraphSaveGeneratesRelayUser(t *testing.T) {
 	s := newTestStore(t)
 	phys := seedNode(t, s, "node-1")
-	g, err := s.CreateGraph("relay")
+	g, err := s.CreateGraph(GraphCreate{Name: "relay"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func mustLoadRelayUser(t *testing.T, s *Store, graphID, nodeID string) *graph.In
 func TestGraphCascadeDelete(t *testing.T) {
 	s := newTestStore(t)
 	phys := seedNode(t, s, "node-1")
-	g, err := s.CreateGraph("cascade")
+	g, err := s.CreateGraph(GraphCreate{Name: "cascade"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestGraphCascadeDelete(t *testing.T) {
 	}
 
 	// удаление физической ноды каскадно удаляет её элементы графа
-	g2, _ := s.CreateGraph("cascade2")
+	g2, _ := s.CreateGraph(GraphCreate{Name: "cascade2"})
 	state2 := graph.State{Nodes: []graph.Node{
 		{ID: "in2", NodeID: phys.ID, Kind: "inbound", Protocol: "vless", Tag: "in2", Settings: []byte(`{}`)},
 	}}
@@ -252,10 +252,10 @@ func TestGraphCascadeDelete(t *testing.T) {
 
 func TestGraphListAndRename(t *testing.T) {
 	s := newTestStore(t)
-	if _, err := s.CreateGraph("alpha"); err != nil {
+	if _, err := s.CreateGraph(GraphCreate{Name: "alpha"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateGraph("beta"); err != nil {
+	if _, err := s.CreateGraph(GraphCreate{Name: "beta"}); err != nil {
 		t.Fatal(err)
 	}
 	graphs, err := s.ListGraphs()
@@ -283,10 +283,10 @@ func TestGraphListAndRename(t *testing.T) {
 
 func TestDuplicateGraphNameFails(t *testing.T) {
 	s := newTestStore(t)
-	if _, err := s.CreateGraph("same"); err != nil {
+	if _, err := s.CreateGraph(GraphCreate{Name: "same"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateGraph("same"); err == nil {
+	if _, err := s.CreateGraph(GraphCreate{Name: "same"}); err == nil {
 		t.Fatal("duplicate graph name must fail (UNIQUE)")
 	}
 }

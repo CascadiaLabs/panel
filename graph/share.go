@@ -9,20 +9,22 @@ import (
 	"strings"
 )
 
-// ShareLinks собирает v2ray share-links для всех entry-inbound графа —
-// по одной подписке клиент получает все входы разом.
-func ShareLinks(st State, phys []PhysNode, c PanelCreds) ([]string, error) {
+// EntryInbound — entry-inbound графа с вычисленным адресом для клиента.
+type EntryInbound struct {
+	Node  Node
+	In    InboundSettings
+	Host  string
+	Order int
+}
+
+// EntryInbounds возвращает entry-inbound'ы в порядке подписки: сначала по
+// subscription_order, затем по тегу и ID (детерминированно).
+func EntryInbounds(st State, phys []PhysNode) ([]EntryInbound, error) {
 	physByID := map[string]PhysNode{}
 	for _, p := range phys {
 		physByID[p.ID] = p
 	}
-	type subscriptionInbound struct {
-		node  Node
-		in    InboundSettings
-		host  string
-		order int
-	}
-	var inbounds []subscriptionInbound
+	var entries []EntryInbound
 	for _, el := range st.Nodes {
 		if el.Kind != KindInbound || !el.Entry {
 			continue
@@ -37,24 +39,33 @@ func ShareLinks(st State, phys []PhysNode, c PanelCreds) ([]string, error) {
 				host = p.Host()
 			}
 		}
-		inbounds = append(inbounds, subscriptionInbound{node: el, in: in, host: host, order: in.SubscriptionOrder})
+		entries = append(entries, EntryInbound{Node: el, In: in, Host: host, Order: in.SubscriptionOrder})
 	}
 
 	// Порядок slice Nodes не является пользовательским контрактом. Сортируем по
 	// явно заданному приоритету, а при равенстве — детерминированно по тегу и ID.
-	sort.SliceStable(inbounds, func(i, j int) bool {
-		if inbounds[i].order != inbounds[j].order {
-			return inbounds[i].order < inbounds[j].order
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].Order != entries[j].Order {
+			return entries[i].Order < entries[j].Order
 		}
-		if inbounds[i].node.Tag != inbounds[j].node.Tag {
-			return inbounds[i].node.Tag < inbounds[j].node.Tag
+		if entries[i].Node.Tag != entries[j].Node.Tag {
+			return entries[i].Node.Tag < entries[j].Node.Tag
 		}
-		return inbounds[i].node.ID < inbounds[j].node.ID
+		return entries[i].Node.ID < entries[j].Node.ID
 	})
+	return entries, nil
+}
 
-	links := make([]string, 0, len(inbounds))
-	for _, entry := range inbounds {
-		link, err := buildShareLink(entry.node, entry.in, entry.host, c)
+// ShareLinks собирает v2ray share-links для всех entry-inbound графа —
+// по одной подписке клиент получает все входы разом.
+func ShareLinks(st State, phys []PhysNode, c PanelCreds) ([]string, error) {
+	entries, err := EntryInbounds(st, phys)
+	if err != nil {
+		return nil, err
+	}
+	links := make([]string, 0, len(entries))
+	for _, e := range entries {
+		link, err := buildShareLink(e.Node, e.In, e.Host, c)
 		if err != nil {
 			return nil, err
 		}

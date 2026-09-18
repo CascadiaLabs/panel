@@ -1,7 +1,7 @@
 <script lang="ts">
   // Панель настроек элемента графа: формы по kind/protocol.
   // Мутирует graphNode.settings напрямую; после каждого изменения дергается onChanged().
-  import { generateSecret, generateRealityPair } from '$lib/api';
+  import { generateSecret, generateRealityPair, listRouteRules, getInboundRouteAssignments, assignInboundRoute, unassignInboundRoute, type RouteRule } from '$lib/api';
   import { randomUUID } from '$lib/uuid';
   import { applyProtocol } from '$lib/element';
   import type { GraphNode, Node } from '$lib/api';
@@ -10,6 +10,7 @@
     graphNode,
     physNodes,
     cascadeTarget, // GraphNode | null — inbound, к которому подключён этот outbound
+    graphId,
     onChanged,
     onDelete,
     onClose,
@@ -28,6 +29,45 @@
   );
 
   let busy = $state(false);
+
+  // Route rules assignment for inbound nodes
+  let routeRules: RouteRule[] = $state([]);
+  let assignedRuleIds: Set<string> = $state(new Set());
+  let rulesLoading = $state(false);
+
+  async function loadRouteRules() {
+    if (!graphId || graphNode.kind !== 'inbound') return;
+    rulesLoading = true;
+    try {
+      routeRules = await listRouteRules(graphId);
+      const resp = await getInboundRouteAssignments(graphNode.id);
+      assignedRuleIds = new Set(resp.route_rule_ids);
+    } catch (e) {
+      console.error('Failed to load route rules:', e);
+    } finally {
+      rulesLoading = false;
+    }
+  }
+
+  async function toggleRule(ruleId: string) {
+    if (assignedRuleIds.has(ruleId)) {
+      assignedRuleIds.delete(ruleId);
+      try { await unassignInboundRoute(graphNode.id, ruleId); } catch(e) { console.error('Failed to unassign:', e); }
+    } else {
+      assignedRuleIds.add(ruleId);
+      try { await assignInboundRoute(graphNode.id, ruleId); } catch(e) { console.error('Failed to assign:', e); }
+    }
+    // Reload to sync with server
+    const resp = await getInboundRouteAssignments(graphNode.id);
+    assignedRuleIds = new Set(resp.route_rule_ids);
+  }
+
+  // Load route rules when inbound is selected
+  $effect(() => {
+    if (graphNode.kind === 'inbound' && graphId) {
+      void loadRouteRules();
+    }
+  });
 
   // список через запятую для полей rule
   function ruleList(field) {
@@ -294,6 +334,23 @@
           {/if}
         {/if}
       {/if}
+
+      <!-- Маршрутные правила -->
+      <h3>Маршрутные правила</h3>
+      {#if rulesLoading}
+        <p class="hint">Загрузка правил…</p>
+      {:else if routeRules.length === 0}
+        <p class="hint">Нет созданных правил. Создайте их на вкладке «Маршрутизация».</p>
+      {:else}
+        <div class="rule-list">
+          {#each routeRules as rule}
+            <label class="rule-check">
+              <input type="checkbox" checked={assignedRuleIds.has(rule.id)} onchange={() => toggleRule(rule.id)} />
+              <span class="rule-name">{rule.name}</span>
+            </label>
+          {/each}
+        </div>
+      {/if}
     {:else if graphNode.kind === 'outbound'}
       {#if graphNode.protocol === 'direct'}
         <p class="hint">Прямое соединение с интернетом. Терминальный элемент: подключите к нему inbound
@@ -507,4 +564,8 @@
   .kv-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.5rem; margin-top: 0.5rem; font-size: 0.72rem; }
   .kv-grid span { color: #94a3b8; }
   .kv-grid code { color: #e2e8f0; word-break: break-all; }
+  .rule-list { display: flex; flex-direction: column; gap: 0.35rem; }
+  .rule-check { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.8125rem; }
+  .rule-check input { width: auto; }
+  .rule-name { color: #e2e8f0; }
 </style>

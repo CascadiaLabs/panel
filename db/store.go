@@ -48,10 +48,15 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
 
 CREATE TABLE IF NOT EXISTS graphs (
-	id         TEXT PRIMARY KEY,
-	name       TEXT NOT NULL UNIQUE,
-	created_at INTEGER NOT NULL,
-	updated_at INTEGER NOT NULL
+	id                TEXT PRIMARY KEY,
+	name              TEXT NOT NULL UNIQUE,
+	created_at        INTEGER NOT NULL,
+	updated_at        INTEGER NOT NULL,
+	subscription_name TEXT    DEFAULT '',
+	subscription_desc TEXT    DEFAULT '',
+	subscription_site TEXT    DEFAULT '',
+	subscription_support TEXT  DEFAULT '',
+	client_route  TEXT    DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS graph_nodes (
@@ -82,20 +87,45 @@ CREATE TABLE IF NOT EXISTS graph_edges (
 );
 CREATE INDEX IF NOT EXISTS idx_graph_edges_graph ON graph_edges(graph_id);
 
+-- Правила маршрутизации: создаются отдельно и назначаются на конкретные inbounds.
+-- graph_id = '' означает глобальное правило (доступно для всех графов).
+CREATE TABLE IF NOT EXISTS route_rules (
+	id          TEXT PRIMARY KEY,
+	graph_id    TEXT NOT NULL DEFAULT '',
+	name        TEXT NOT NULL,
+	rules_json  TEXT NOT NULL DEFAULT '[]',
+	is_default  INTEGER NOT NULL DEFAULT 0,
+	created_at  INTEGER NOT NULL,
+	updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_route_rules_graph ON route_rules(graph_id);
+
+-- Маппинг: inbound → route_rule (один inbound может иметь несколько правил).
+CREATE TABLE IF NOT EXISTS inbound_routes (
+	id           TEXT PRIMARY KEY,
+	inbound_id   TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+	route_rule_id TEXT NOT NULL REFERENCES route_rules(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_inbound_routes_inbound ON inbound_routes(inbound_id);
+
 -- VPN-пользователи: креды вшиваются в entry-inbound графа; подписка
 -- /sub/{sub_token} отдаёт все entry-inbound как v2ray share-links.
 CREATE TABLE IF NOT EXISTS panel_users (
-	id         TEXT PRIMARY KEY,
-	name       TEXT NOT NULL,
-	graph_id   TEXT NOT NULL REFERENCES graphs(id) ON DELETE CASCADE,
-	uuid       TEXT NOT NULL,
-	password   TEXT NOT NULL,
-	flow       TEXT NOT NULL DEFAULT '',
-	remark     TEXT NOT NULL DEFAULT '',
-	sub_token  TEXT NOT NULL UNIQUE,
-	enabled    INTEGER NOT NULL DEFAULT 1,
-	created_at INTEGER NOT NULL,
-	updated_at INTEGER NOT NULL
+	id           TEXT PRIMARY KEY,
+	name         TEXT NOT NULL,
+	graph_id     TEXT NOT NULL REFERENCES graphs(id) ON DELETE CASCADE,
+	uuid         TEXT NOT NULL,
+	password     TEXT NOT NULL,
+	flow         TEXT NOT NULL DEFAULT '',
+	remark       TEXT NOT NULL DEFAULT '',
+	sub_token    TEXT NOT NULL UNIQUE,
+	enabled      INTEGER NOT NULL DEFAULT 1,
+	used_upload  INTEGER NOT NULL DEFAULT 0,
+	used_download INTEGER NOT NULL DEFAULT 0,
+	total_traffic INTEGER NOT NULL DEFAULT 0,
+	expire_time  INTEGER NOT NULL DEFAULT 0,
+	created_at   INTEGER NOT NULL,
+	updated_at   INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_panel_users_graph ON panel_users(graph_id);
 CREATE INDEX IF NOT EXISTS idx_panel_users_sub ON panel_users(sub_token);
@@ -115,7 +145,47 @@ func New(path string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	// Аддитивная миграция существующих таблиц
+	migrations := []string{
+		`ALTER TABLE panel_users ADD COLUMN used_upload INTEGER DEFAULT 0`,
+		`ALTER TABLE panel_users ADD COLUMN used_download INTEGER DEFAULT 0`,
+		`ALTER TABLE panel_users ADD COLUMN total_traffic INTEGER DEFAULT 0`,
+		`ALTER TABLE panel_users ADD COLUMN expire_time INTEGER DEFAULT 0`,
+		`ALTER TABLE graphs ADD COLUMN subscription_name TEXT DEFAULT ''`,
+		`ALTER TABLE graphs ADD COLUMN subscription_desc TEXT DEFAULT ''`,
+		`ALTER TABLE graphs ADD COLUMN subscription_site TEXT DEFAULT ''`,
+		`ALTER TABLE graphs ADD COLUMN subscription_support TEXT DEFAULT ''`,
+		`ALTER TABLE graphs ADD COLUMN client_route TEXT DEFAULT ''`,
+		`UPDATE graphs SET client_route = '' WHERE client_route IS NULL`,
+		`ALTER TABLE route_rules ADD COLUMN is_default INTEGER DEFAULT 0`,
+		// Миграция: убираем FK на graph_id в route_rules (глобальные правила имеют graph_id = '')
+		`CREATE TABLE IF NOT EXISTS route_rules_new (
+			id          TEXT PRIMARY KEY,
+			graph_id    TEXT NOT NULL DEFAULT '',
+			name        TEXT NOT NULL,
+			rules_json  TEXT NOT NULL DEFAULT '[]',
+			is_default  INTEGER NOT NULL DEFAULT 0,
+			created_at  INTEGER NOT NULL,
+			updated_at  INTEGER NOT NULL
+		)`,
+		`INSERT INTO route_rules_new (id, graph_id, name, rules_json, is_default, created_at, updated_at)
+			SELECT id, COALESCE(graph_id, ''), name, rules_json, COALESCE(is_default, 0), created_at, updated_at
+			FROM route_rules`,
+		`DROP TABLE route_rules`,
+		`ALTER TABLE route_rules_new RENAME TO route_rules`,
+		`CREATE INDEX IF NOT EXISTS idx_route_rules_graph ON route_rules(graph_id)`,
+	}
+	for _, m := range migrations {
+		if _, err := db.Exec(m); err != nil {
+			_ = err
+		}
+	}
+	store := &Store{db: db}
+	// Инициализируем глобальные дефолтные правила маршрутизации (один раз)
+	if err := store.EnsureGlobalDefaultRouteRules(); err != nil {
+		return nil, err
+	}
+	return store, nil
 }
 
 // dsn включает foreign_keys (каскадные удаления) и busy_timeout (конкурентные записи).

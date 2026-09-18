@@ -11,23 +11,48 @@ import (
 )
 
 type Graph struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	CreatedAt         int64  `json:"created_at"`
+	UpdatedAt         int64  `json:"updated_at"`
+	SubscriptionName  string `json:"subscription_name"`
+	SubscriptionDesc  string `json:"subscription_desc"`
+	SubscriptionSite  string `json:"subscription_site"`
+	SubscriptionSupport string `json:"subscription_support"`
+	ClientRoute       string `json:"client_route"` // JSON-строка с клиентской маршрутизацией
 }
 
-func (s *Store) CreateGraph(name string) (Graph, error) {
-	g := Graph{ID: mustUUID(), Name: name}
+type GraphCreate struct {
+	Name              string
+	SubscriptionName  string
+	SubscriptionDesc  string
+	SubscriptionSite  string
+	SubscriptionSupport string
+	ClientRoute       string
+}
+
+func (s *Store) CreateGraph(g GraphCreate) (Graph, error) {
 	now := time.Now().Unix()
-	g.CreatedAt, g.UpdatedAt = now, now
-	_, err := s.db.Exec(`INSERT INTO graphs (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-		g.ID, g.Name, g.CreatedAt, g.UpdatedAt)
-	return g, err
+	graph := Graph{
+		ID:                mustUUID(),
+		Name:              g.Name,
+		SubscriptionName:  g.SubscriptionName,
+		SubscriptionDesc:  g.SubscriptionDesc,
+		SubscriptionSite:  g.SubscriptionSite,
+		SubscriptionSupport: g.SubscriptionSupport,
+		ClientRoute:       g.ClientRoute,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	_, err := s.db.Exec(`INSERT INTO graphs (id, name, created_at, updated_at, subscription_name, subscription_desc, subscription_site, subscription_support, client_route)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		graph.ID, graph.Name, graph.CreatedAt, graph.UpdatedAt,
+		graph.SubscriptionName, graph.SubscriptionDesc, graph.SubscriptionSite, graph.SubscriptionSupport, graph.ClientRoute)
+	return graph, err
 }
 
 func (s *Store) ListGraphs() ([]Graph, error) {
-	rows, err := s.db.Query(`SELECT id, name, created_at, updated_at FROM graphs ORDER BY name`)
+	rows, err := s.db.Query(`SELECT id, name, created_at, updated_at, subscription_name, subscription_desc, subscription_site, subscription_support, client_route FROM graphs ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +60,7 @@ func (s *Store) ListGraphs() ([]Graph, error) {
 	graphs := make([]Graph, 0)
 	for rows.Next() {
 		var g Graph
-		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedAt, &g.UpdatedAt, &g.SubscriptionName, &g.SubscriptionDesc, &g.SubscriptionSite, &g.SubscriptionSupport, &g.ClientRoute); err != nil {
 			return nil, err
 		}
 		graphs = append(graphs, g)
@@ -45,8 +70,8 @@ func (s *Store) ListGraphs() ([]Graph, error) {
 
 func (s *Store) GetGraph(id string) (Graph, error) {
 	var g Graph
-	err := s.db.QueryRow(`SELECT id, name, created_at, updated_at FROM graphs WHERE id = ?`, id).
-		Scan(&g.ID, &g.Name, &g.CreatedAt, &g.UpdatedAt)
+	err := s.db.QueryRow(`SELECT id, name, created_at, updated_at, subscription_name, subscription_desc, subscription_site, subscription_support, client_route FROM graphs WHERE id = ?`, id).
+		Scan(&g.ID, &g.Name, &g.CreatedAt, &g.UpdatedAt, &g.SubscriptionName, &g.SubscriptionDesc, &g.SubscriptionSite, &g.SubscriptionSupport, &g.ClientRoute)
 	if errors.Is(err, sql.ErrNoRows) {
 		return g, ErrNotFound
 	}
@@ -56,6 +81,21 @@ func (s *Store) GetGraph(id string) (Graph, error) {
 func (s *Store) RenameGraph(id, name string) error {
 	_, err := s.db.Exec(`UPDATE graphs SET name = ?, updated_at = ? WHERE id = ?`, name, time.Now().Unix(), id)
 	return err
+}
+
+// UpdateGraphSubscription обновляет метаданные подписки и клиентскую маршрутизацию графа.
+func (s *Store) UpdateGraphSubscription(id string, sub SubscriptionSettings) error {
+	_, err := s.db.Exec(`UPDATE graphs SET subscription_name = ?, subscription_desc = ?, subscription_site = ?, subscription_support = ?, client_route = ?, updated_at = ? WHERE id = ?`,
+		sub.SubscriptionName, sub.SubscriptionDesc, sub.SubscriptionSite, sub.SubscriptionSupport, sub.ClientRoute, time.Now().Unix(), id)
+	return err
+}
+
+type SubscriptionSettings struct {
+	SubscriptionName  string
+	SubscriptionDesc  string
+	SubscriptionSite  string
+	SubscriptionSupport string
+	ClientRoute       string
 }
 
 func (s *Store) DeleteGraph(id string) error {

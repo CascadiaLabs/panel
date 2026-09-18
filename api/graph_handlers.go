@@ -26,7 +26,12 @@ func (h *Handler) ListGraphs(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) CreateGraph(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name string `json:"name"`
+		Name              string `json:"name"`
+		SubscriptionName  string `json:"subscription_name"`
+		SubscriptionDesc  string `json:"subscription_desc"`
+		SubscriptionSite  string `json:"subscription_site"`
+		SubscriptionSupport string `json:"subscription_support"`
+		ClientRoute       string `json:"client_route"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -36,7 +41,14 @@ func (h *Handler) CreateGraph(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
-	g, err := h.store.CreateGraph(body.Name)
+	g, err := h.store.CreateGraph(db.GraphCreate{
+		Name:              body.Name,
+		SubscriptionName:  body.SubscriptionName,
+		SubscriptionDesc:  body.SubscriptionDesc,
+		SubscriptionSite:  body.SubscriptionSite,
+		SubscriptionSupport: body.SubscriptionSupport,
+		ClientRoute:       body.ClientRoute,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -79,6 +91,12 @@ func (h *Handler) SaveGraph(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name  *string      `json:"name"`
 		State *graph.State `json:"state"`
+		// Поля подписки (перезаписывают существующие при наличии)
+		SubscriptionName  *string `json:"subscription_name"`
+		SubscriptionDesc  *string `json:"subscription_desc"`
+		SubscriptionSite  *string `json:"subscription_site"`
+		SubscriptionSupport *string `json:"subscription_support"`
+		ClientRoute       *string `json:"client_route"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -86,6 +104,31 @@ func (h *Handler) SaveGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Name != nil && *body.Name != "" {
 		if err := h.store.RenameGraph(id, *body.Name); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	// Обновляем метаданные подписки и клиентскую маршрутизацию, если переданы
+	if body.SubscriptionName != nil || body.SubscriptionDesc != nil ||
+		body.SubscriptionSite != nil || body.SubscriptionSupport != nil ||
+		body.ClientRoute != nil {
+		sub := db.SubscriptionSettings{}
+			if body.SubscriptionName != nil {
+				sub.SubscriptionName = *body.SubscriptionName
+			}
+			if body.SubscriptionDesc != nil {
+				sub.SubscriptionDesc = *body.SubscriptionDesc
+			}
+			if body.SubscriptionSite != nil {
+				sub.SubscriptionSite = *body.SubscriptionSite
+			}
+			if body.SubscriptionSupport != nil {
+				sub.SubscriptionSupport = *body.SubscriptionSupport
+			}
+			if body.ClientRoute != nil {
+				sub.ClientRoute = *body.ClientRoute
+			}
+		if err := h.store.UpdateGraphSubscription(id, sub); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

@@ -9,21 +9,27 @@ import (
 // PanelUser — VPN-клиент панели (не путать с admin-пользователем из users).
 // Креды пользователя вшиваются во все entry-inbound его графа.
 type PanelUser struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	GraphID   string `json:"graph_id"`
-	GraphName string `json:"graph_name,omitempty"`
-	UUID      string `json:"uuid"`
-	Password  string `json:"password"`
-	Flow      string `json:"flow"`
-	Remark    string `json:"remark"`
-	SubToken  string `json:"sub_token"`
-	Enabled   bool   `json:"enabled"`
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	GraphID     string `json:"graph_id"`
+	GraphName   string `json:"graph_name,omitempty"`
+	UUID        string `json:"uuid"`
+	Password    string `json:"password"`
+	Flow        string `json:"flow"`
+	Remark      string `json:"remark"`
+	SubToken    string `json:"sub_token"`
+	Enabled     bool   `json:"enabled"`
+	UsedUpload  int64  `json:"used_upload"`
+	UsedDownload int64 `json:"used_download"`
+	TotalTraffic int64  `json:"total_traffic"`
+	ExpireTime  int64  `json:"expire_time"`  // Unix timestamp секунды
+	CreatedAt   int64  `json:"created_at"`
+	UpdatedAt   int64  `json:"updated_at"`
 }
 
-const panelUserCols = `id, name, graph_id, uuid, password, flow, remark, sub_token, enabled, created_at, updated_at`
+const panelUserCols = `pu.id, pu.name, pu.graph_id, pu.uuid, pu.password, pu.flow, pu.remark, pu.sub_token, pu.enabled, pu.used_upload, pu.used_download, pu.total_traffic, pu.expire_time, pu.created_at, pu.updated_at`
+
+const panelUserColsWithGraph = `pu.id, pu.name, pu.graph_id, g.name, pu.uuid, pu.password, pu.flow, pu.remark, pu.sub_token, pu.enabled, pu.used_upload, pu.used_download, pu.total_traffic, pu.expire_time, pu.created_at, pu.updated_at`
 
 func (s *Store) CreatePanelUser(name, graphID string) (PanelUser, error) {
 	u := PanelUser{
@@ -37,15 +43,15 @@ func (s *Store) CreatePanelUser(name, graphID string) (PanelUser, error) {
 	}
 	now := time.Now().Unix()
 	u.CreatedAt, u.UpdatedAt = now, now
-	_, err := s.db.Exec(`INSERT INTO panel_users (id, name, graph_id, uuid, password, flow, remark, sub_token, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		u.ID, u.Name, u.GraphID, u.UUID, u.Password, u.Flow, u.Remark, u.SubToken, 1, u.CreatedAt, u.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO panel_users (id, name, graph_id, uuid, password, flow, remark, sub_token, enabled, used_upload, used_download, total_traffic, expire_time, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		u.ID, u.Name, u.GraphID, u.UUID, u.Password, u.Flow, u.Remark, u.SubToken, 1,
+		u.UsedUpload, u.UsedDownload, u.TotalTraffic, u.ExpireTime, u.CreatedAt, u.UpdatedAt)
 	return u, err
 }
 
 func (s *Store) ListPanelUsers() ([]PanelUser, error) {
-	rows, err := s.db.Query(`SELECT pu.id, pu.name, pu.graph_id, g.name, pu.uuid, pu.password, pu.flow, pu.remark, pu.sub_token, pu.enabled, pu.created_at, pu.updated_at
-		FROM panel_users pu LEFT JOIN graphs g ON g.id = pu.graph_id ORDER BY pu.name`)
+	rows, err := s.db.Query(`SELECT `+panelUserColsWithGraph+` FROM panel_users pu LEFT JOIN graphs g ON g.id = pu.graph_id ORDER BY pu.name`)
 	if err != nil {
 		return nil, err
 	}
@@ -62,14 +68,12 @@ func (s *Store) ListPanelUsers() ([]PanelUser, error) {
 }
 
 func (s *Store) GetPanelUser(id string) (PanelUser, error) {
-	row := s.db.QueryRow(`SELECT pu.id, pu.name, pu.graph_id, g.name, pu.uuid, pu.password, pu.flow, pu.remark, pu.sub_token, pu.enabled, pu.created_at, pu.updated_at
-		FROM panel_users pu LEFT JOIN graphs g ON g.id = pu.graph_id WHERE pu.id = ?`, id)
+	row := s.db.QueryRow(`SELECT `+panelUserColsWithGraph+` FROM panel_users pu LEFT JOIN graphs g ON g.id = pu.graph_id WHERE pu.id = ?`, id)
 	return scanPanelUser(row)
 }
 
 func (s *Store) GetPanelUserBySubToken(token string) (PanelUser, error) {
-	row := s.db.QueryRow(`SELECT pu.id, pu.name, pu.graph_id, g.name, pu.uuid, pu.password, pu.flow, pu.remark, pu.sub_token, pu.enabled, pu.created_at, pu.updated_at
-		FROM panel_users pu LEFT JOIN graphs g ON g.id = pu.graph_id WHERE pu.sub_token = ?`, token)
+	row := s.db.QueryRow(`SELECT `+panelUserColsWithGraph+` FROM panel_users pu LEFT JOIN graphs g ON g.id = pu.graph_id WHERE pu.sub_token = ?`, token)
 	return scanPanelUser(row)
 }
 
@@ -77,6 +81,13 @@ func (s *Store) GetPanelUserBySubToken(token string) (PanelUser, error) {
 func (s *Store) UpdatePanelUser(u PanelUser) error {
 	_, err := s.db.Exec(`UPDATE panel_users SET name = ?, remark = ?, flow = ?, enabled = ?, updated_at = ? WHERE id = ?`,
 		u.Name, u.Remark, u.Flow, btoi(u.Enabled), time.Now().Unix(), u.ID)
+	return err
+}
+
+// UpdatePanelUserTraffic обновляет статистику трафика пользователя.
+func (s *Store) UpdatePanelUserTraffic(id string, usedUpload, usedDownload, totalTraffic, expireTime int64) error {
+	_, err := s.db.Exec(`UPDATE panel_users SET used_upload = ?, used_download = ?, total_traffic = ?, expire_time = ?, updated_at = ? WHERE id = ?`,
+		usedUpload, usedDownload, totalTraffic, expireTime, time.Now().Unix(), id)
 	return err
 }
 
@@ -99,7 +110,8 @@ type rowScanner interface {
 func scanPanelUser(row rowScanner) (PanelUser, error) {
 	var u PanelUser
 	var enabled int
-	err := row.Scan(&u.ID, &u.Name, &u.GraphID, &u.GraphName, &u.UUID, &u.Password, &u.Flow, &u.Remark, &u.SubToken, &enabled, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.ID, &u.Name, &u.GraphID, &u.GraphName, &u.UUID, &u.Password, &u.Flow, &u.Remark, &u.SubToken, &enabled,
+		&u.UsedUpload, &u.UsedDownload, &u.TotalTraffic, &u.ExpireTime, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, ErrNotFound
 	}

@@ -28,6 +28,7 @@
   import GraphNodeCard from './GraphNodeCard.svelte';
   import GraphDock from './GraphDock.svelte';
   import NodeSettings from './NodeSettings.svelte';
+  import SubscriptionSettings from './SubscriptionSettings.svelte';
 
   let { graphId, onBack } = $props();
 
@@ -58,7 +59,8 @@
   let deployError = $state('');
   let flowWrapper = $state<HTMLDivElement | null>(null);
   let wrapperSize = $state({ w: 800, h: 600 });
-
+  let showSubscription = $state(false);
+  
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   const selected = $derived(gnodes.find((n) => n.id === selectedId) ?? null);
@@ -445,6 +447,7 @@
       <div class="group">
         <button class="tool" onclick={() => doValidate()}>Проверить</button>
         <button class="tool" onclick={preview}>Конфиги</button>
+        <button class="tool" onclick={() => (showSubscription = !showSubscription)}>Подписка</button>
         <button class="tool primary" disabled={deploying} onclick={deploy}>
           {deploying ? 'Деплой…' : 'Деплой на ноды'}
         </button>
@@ -502,11 +505,18 @@
   </aside>
 
   <!-- Панель настроек -->
-  {#if selected}
+  {#if showSubscription}
+    <SubscriptionSettings
+      {graphId}
+      graphName={graph?.name ?? ''}
+      onChanged={() => {}}
+    />
+  {:else if selected}
     <NodeSettings
       graphNode={selected}
       {physNodes}
       {cascadeTarget}
+      {graphId}
       onChanged={scheduleSave}
       onDelete={deleteSelected}
       onClose={() => (selectedId = '')}

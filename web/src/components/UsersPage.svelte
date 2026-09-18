@@ -16,6 +16,10 @@
   let newGraphId = $state('');
   let newRemark = $state('');
   let newFlow = $state('');
+  let newUsedUpload = $state('');
+  let newUsedDownload = $state('');
+  let newTotalTraffic = $state('');
+  let newExpireTime = $state('');
   let creating = $state(false);
 
   let qrUser = $state<PanelUser | null>(null);
@@ -47,6 +51,10 @@
     newGraphId = '';
     newRemark = '';
     newFlow = '';
+    newUsedUpload = '';
+    newUsedDownload = '';
+    newTotalTraffic = '';
+    newExpireTime = '';
     showForm = true;
   }
 
@@ -56,6 +64,10 @@
     newGraphId = u.graph_id;
     newRemark = u.remark;
     newFlow = u.flow;
+    newUsedUpload = u.used_upload || '';
+    newUsedDownload = u.used_download || '';
+    newTotalTraffic = u.total_traffic || '';
+    newExpireTime = u.expire_time || '';
     showForm = true;
   }
 
@@ -70,7 +82,16 @@
     error = '';
     warning = '';
     try {
-      const payload = { name: newName.trim(), graph_id: newGraphId, remark: newRemark.trim(), flow: newFlow };
+      const payload = {
+        name: newName.trim(),
+        graph_id: newGraphId,
+        remark: newRemark.trim(),
+        flow: newFlow,
+        used_upload: newUsedUpload ? Number(newUsedUpload) : undefined,
+        used_download: newUsedDownload ? Number(newUsedDownload) : undefined,
+        total_traffic: newTotalTraffic ? Number(newTotalTraffic) : undefined,
+        expire_time: newExpireTime ? Number(newExpireTime) : undefined,
+      };
       const resp = editingId ? await updateUser(editingId, payload) : await createUser(payload);
       if (resp.warning) warning = `Сохранено, но деплой не выполнен: ${resp.warning}`;
       else if (resp.deploy && !resp.deploy.deployed) warning = 'Сохранено, но часть нод не обновилась — проверьте статусы нод.';
@@ -155,6 +176,12 @@
         <option value="">без flow</option>
         <option value="xtls-rprx-vision">flow: xtls-rprx-vision</option>
       </select>
+      <div class="traffic-fields">
+        <input type="number" placeholder="Uploaded (байт)" bind:value={newUsedUpload} title="Использовано загрузки" />
+        <input type="number" placeholder="Downloaded (байт)" bind:value={newUsedDownload} title="Использовано скачивания" />
+        <input type="number" placeholder="Total (байт)" bind:value={newTotalTraffic} title="Лимит трафика (0 = безлимит)" />
+        <input type="number" placeholder="Expires (Unix)" bind:value={newExpireTime} title="Истечение подписки (Unix timestamp)" />
+      </div>
       <button type="submit" disabled={creating}>{creating ? 'Сохранение…' : editingId ? 'Сохранить' : '+ Создать'}</button>
       <button type="button" onclick={() => (showForm = false)}>Отмена</button>
     </form>
@@ -171,6 +198,8 @@
         <tr>
           <th>Имя</th>
           <th>Граф</th>
+          <th>Загр./Скач.</th>
+          <th>Лимит/Истек.</th>
           <th>Подписка</th>
           <th>Статус</th>
           <th>Создан</th>
@@ -185,6 +214,8 @@
               {#if u.remark}<div class="remark" title="Информация для клиента">{u.remark}</div>{/if}
             </td>
             <td>{u.graph_name || '—'}</td>
+            <td class="num">{u.used_upload > 0 ? (u.used_upload / 1024 / 1024).toFixed(1) + ' MB / ' : ''}{(u.used_download > 0 ? (u.used_download / 1024 / 1024).toFixed(1) + ' MB' : '—')}</td>
+            <td class="num">{u.total_traffic > 0 ? (u.total_traffic / 1024 / 1024).toFixed(1) + ' MB' : '∞'} / {u.expire_time > 0 ? new Date(u.expire_time * 1000).toLocaleDateString() : '—'}</td>
             <td>
               <button
                 class="link"
@@ -225,6 +256,9 @@
 {/if}
 
 <style>
+  .num { font-family: monospace; font-size: 0.75rem; white-space: nowrap; }
+  .traffic-fields { display: flex; gap: 0.5rem; margin: 0.5rem 0; flex-wrap: wrap; }
+  .traffic-fields input { flex: 1; min-width: 120px; }
   header { display: flex; align-items: center; gap: 1rem; }
   header h1 { flex: 1; }
   .new-user {
