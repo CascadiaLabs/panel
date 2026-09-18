@@ -398,7 +398,7 @@
     {:else if graphNode.kind === 'balancer'}
       {#if graphNode.protocol === 'urltest'}
         <p class="hint">Автовыбор адресата с наименьшим пингом (urltest). Подключите inbound слева,
-          outbound-кандидаты справа.</p>
+          outbound-кандидаты или inbound (в том числе на этой ноде) справа.</p>
         <div class="field">
           <label for="el-bal-url">Test URL</label>
           <input id="el-bal-url" bind:value={s.url} oninput={touch} placeholder="https://www.gstatic.com/generate_204" />
@@ -414,7 +414,7 @@
           </div>
         </div>
       {:else}
-        <p class="hint">Ручной выбор адресата (selector). Default — tag outbound'а по умолчанию.</p>
+        <p class="hint">Ручной выбор адресата (selector). Default — tag outbound'а или inbound'а по умолчанию.</p>
         <div class="field">
           <label for="el-bal-def">Default outbound tag</label>
           <input id="el-bal-def" bind:value={s.default} oninput={touch} />
