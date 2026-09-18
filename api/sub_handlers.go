@@ -107,16 +107,16 @@ func detectFormat(r *http.Request) string {
 	if format := r.URL.Query().Get("format"); format != "" {
 		return format
 	}
-	ua := r.UserAgent()
-	// Sing-box нативные клиенты
-	if strings.Contains(ua, "Sing-box") ||
-		strings.Contains(ua, "NekoBox") ||
-		strings.Contains(ua, "Hiddify") ||
-		strings.Contains(ua, "Streisand") {
+	ua := strings.ToLower(r.UserAgent())
+	// Sing-box нативные клиенты (включая iOS sing-box)
+	if strings.Contains(ua, "sing-box") ||
+		strings.Contains(ua, "nekobox") ||
+		strings.Contains(ua, "hiddify") ||
+		strings.Contains(ua, "streisand") {
 		return "json"
 	}
 	// Clash-клиенты обычно умеют и то, и другое — отдаём JSON (они его поймут)
-	if strings.Contains(ua, "Clash") {
+	if strings.Contains(ua, "clash") {
 		return "json"
 	}
 	// Happ, v2rayNG, v2rayTun и остальные Xray-клиенты — base64 share links
@@ -268,11 +268,10 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 			},
 		},
 		"rules": []map[string]any{
-			{"outbound": "any", "server": "dns-direct"},
+			{"server": "dns-direct"},
 			{"clash_mode": "Direct", "server": "dns-direct"},
 			{"clash_mode": "Global", "server": "dns-remote"},
 		},
-		"strategy": "ipv4_only",
 	}
 
 	// Route rules (общие для клиента)
@@ -330,7 +329,6 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 			"auto_route":    true,
 			"strict_route":  true,
 			"sniff":         true,
-			"stack":         "mixed",
 		},
 	}
 

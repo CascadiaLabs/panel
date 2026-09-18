@@ -606,7 +606,8 @@ func clientOutboundBlock(protocol, tag string, in InboundSettings, host string, 
 // адрес/порт/TLS/transport зеркалятся из inbound, креды берутся из панели.
 func ClientOutbound(el Node, in InboundSettings, host string, c PanelCreds) map[string]any {
 	user := InboundUser{Name: c.Name, UUID: c.UUID, Password: c.Password, Flow: c.Flow}
-	return clientOutboundBlock(el.Protocol, el.Tag, in, host, user, c.Flow)
+	// uTLS fingerprint для Reality — стандартно "chrome" (не путать с flow!)
+	return clientOutboundBlock(el.Protocol, el.Tag, in, host, user, "chrome")
 }
 
 // clientTLSFromInbound зеркалирует TLS inbound'а на сторону клиента (outbound).
