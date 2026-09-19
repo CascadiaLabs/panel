@@ -20,24 +20,39 @@ type RouteRule struct {
 
 // RouteRuleItem — отдельное правило внутри массива rules_json.
 type RouteRuleItem struct {
-	Name      string   `json:"name"`
-	Action    string   `json:"action"`
-	Outbounds []string `json:"outbounds"`
-	Domain    []string `json:"domain"`
-	IP        []string `json:"ip"`
-	Final     bool     `json:"final"`
+	Name           string   `json:"name"`
+	Action         string   `json:"action"`
+	Outbounds      []string `json:"outbounds,omitempty"`
+	Domain         []string `json:"domain,omitempty"`
+	DomainSuffix   []string `json:"domain_suffix,omitempty"`
+	DomainKeyword  []string `json:"domain_keyword,omitempty"`
+	DomainRegex    []string `json:"domain_regex,omitempty"`
+	IPCIDR         []string `json:"ip_cidr,omitempty"`
+	SourceIPCIDR   []string `json:"source_ip_cidr,omitempty"`
+	Port           []string `json:"port,omitempty"`
+	SourcePort     []string `json:"source_port,omitempty"`
+	Network        []string `json:"network,omitempty"`
+	Protocol       []string `json:"protocol,omitempty"`
+	Process        []string `json:"process,omitempty"`
+	ProcessPath    []string `json:"process_path,omitempty"`
+	PackageName    []string `json:"package_name,omitempty"`
+	UID            []string `json:"uid,omitempty"`
+	GID            []string `json:"gid,omitempty"`
+	NetworkType    []string `json:"network_type,omitempty"`
+	Inbound        []string `json:"inbound,omitempty"`
+	Final          bool     `json:"final,omitempty"`
 }
 
 // DefaultRouteRules возвращает список дефолтных правил маршрутизации.
 func DefaultRouteRules() []RouteRuleItem {
 	return []RouteRuleItem{
 		{
-			Name:      "ru-direct",
-			Action:    "route",
-			Outbounds: []string{"direct"},
-			Domain:    []string{"geosite:ru"},
-			IP:        []string{"geoip:ru"},
-			Final:     true,
+			Name:          "ru-direct",
+			Action:        "route",
+			Outbounds:     []string{"direct"},
+			DomainSuffix:  []string{".ru", ".su", ".xn--p1ai"},
+			IPCIDR:        []string{"geoip:ru"},
+			Final:         true,
 		},
 		{
 			Name:      "ads-blocker",
@@ -48,7 +63,7 @@ func DefaultRouteRules() []RouteRuleItem {
 		{
 			Name:      "private-ip",
 			Action:    "block",
-			IP:        []string{"geoip:private"},
+			IPCIDR:    []string{"geoip:private"},
 			Final:     true,
 		},
 		{

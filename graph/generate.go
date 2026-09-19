@@ -9,12 +9,27 @@ import (
 
 // RouteRuleItem — правило маршрутизации sing-box (соответствует db.RouteRuleItem).
 type RouteRuleItem struct {
-	Name      string   `json:"name"`
-	Action    string   `json:"action"`
-	Outbounds []string `json:"outbounds,omitempty"`
-	Domain    []string `json:"domain,omitempty"`
-	IP        []string `json:"ip,omitempty"`
-	Final     bool     `json:"final,omitempty"`
+	Name           string   `json:"name"`
+	Action         string   `json:"action"`
+	Outbounds      []string `json:"outbounds,omitempty"`
+	Domain         []string `json:"domain,omitempty"`
+	DomainSuffix   []string `json:"domain_suffix,omitempty"`
+	DomainKeyword  []string `json:"domain_keyword,omitempty"`
+	DomainRegex    []string `json:"domain_regex,omitempty"`
+	IPCIDR         []string `json:"ip_cidr,omitempty"`
+	SourceIPCIDR   []string `json:"source_ip_cidr,omitempty"`
+	Port           []string `json:"port,omitempty"`
+	SourcePort     []string `json:"source_port,omitempty"`
+	Network        []string `json:"network,omitempty"`
+	Protocol       []string `json:"protocol,omitempty"`
+	Process        []string `json:"process,omitempty"`
+	ProcessPath    []string `json:"process_path,omitempty"`
+	PackageName    []string `json:"package_name,omitempty"`
+	UID            []string `json:"uid,omitempty"`
+	GID            []string `json:"gid,omitempty"`
+	NetworkType    []string `json:"network_type,omitempty"`
+	Inbound        []string `json:"inbound,omitempty"`
+	Final          bool     `json:"final,omitempty"`
 }
 
 // InboundRouteRules — правила маршрутизации, назначенные на inbound'ы.
@@ -414,8 +429,53 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 			if len(item.Domain) > 0 {
 				rule["domain"] = item.Domain
 			}
-			if len(item.IP) > 0 {
-				rule["ip_cidr"] = item.IP
+			if len(item.DomainSuffix) > 0 {
+				rule["domain_suffix"] = item.DomainSuffix
+			}
+			if len(item.DomainKeyword) > 0 {
+				rule["domain_keyword"] = item.DomainKeyword
+			}
+			if len(item.DomainRegex) > 0 {
+				rule["domain_regex"] = item.DomainRegex
+			}
+			if len(item.IPCIDR) > 0 {
+				rule["ip_cidr"] = item.IPCIDR
+			}
+			if len(item.SourceIPCIDR) > 0 {
+				rule["source_ip_cidr"] = item.SourceIPCIDR
+			}
+			if len(item.Port) > 0 {
+				rule["port"] = item.Port
+			}
+			if len(item.SourcePort) > 0 {
+				rule["source_port"] = item.SourcePort
+			}
+			if len(item.Network) > 0 {
+				rule["network"] = item.Network
+			}
+			if len(item.Protocol) > 0 {
+				rule["protocol"] = item.Protocol
+			}
+			if len(item.Process) > 0 {
+				rule["process"] = item.Process
+			}
+			if len(item.ProcessPath) > 0 {
+				rule["process_path"] = item.ProcessPath
+			}
+			if len(item.PackageName) > 0 {
+				rule["package_name"] = item.PackageName
+			}
+			if len(item.UID) > 0 {
+				rule["uid"] = item.UID
+			}
+			if len(item.GID) > 0 {
+				rule["gid"] = item.GID
+			}
+			if len(item.NetworkType) > 0 {
+				rule["network_type"] = item.NetworkType
+			}
+			if len(item.Inbound) > 0 {
+				rule["inbound"] = item.Inbound
 			}
 			if item.Final {
 				rule["final"] = true

@@ -1,6 +1,7 @@
 <script lang="ts">
   // Визуальный редактор массива route rules (без обёртки {rules: [...]}).
   // Поддерживает оба формата: визуальный и JSON.
+  // Полные поля sing-box route rule: https://sing-box.sagernet.org/configuration/route/rule/
 
   let { value = '', disabled = false } = $props();
 
@@ -12,9 +13,47 @@
     action: string;
     outbounds: string;
     domain: string;
-    ip: string;
+    domain_suffix: string;
+    domain_keyword: string;
+    domain_regex: string;
+    ip_cidr: string;
+    source_ip_cidr: string;
+    port: string;
+    source_port: string;
+    network: string;
+    protocol: string;
+    process: string;
+    process_path: string;
+    package_name: string;
+    uid: string;
+    gid: string;
+    network_type: string;
+    inbound: string;
     final: boolean;
   }
+
+  const defaultRule = (): Rule => ({
+    action: 'route',
+    outbounds: '',
+    domain: '',
+    domain_suffix: '',
+    domain_keyword: '',
+    domain_regex: '',
+    ip_cidr: '',
+    source_ip_cidr: '',
+    port: '',
+    source_port: '',
+    network: '',
+    protocol: '',
+    process: '',
+    process_path: '',
+    package_name: '',
+    uid: '',
+    gid: '',
+    network_type: '',
+    inbound: '',
+    final: false,
+  });
 
   let rules = $state<Rule[]>(parseRules(value));
 
@@ -27,7 +66,22 @@
           r.action === rules[i]?.action &&
           r.outbounds === rules[i]?.outbounds &&
           r.domain === rules[i]?.domain &&
-          r.ip === rules[i]?.ip &&
+          r.domain_suffix === rules[i]?.domain_suffix &&
+          r.domain_keyword === rules[i]?.domain_keyword &&
+          r.domain_regex === rules[i]?.domain_regex &&
+          r.ip_cidr === rules[i]?.ip_cidr &&
+          r.source_ip_cidr === rules[i]?.source_ip_cidr &&
+          r.port === rules[i]?.port &&
+          r.source_port === rules[i]?.source_port &&
+          r.network === rules[i]?.network &&
+          r.protocol === rules[i]?.protocol &&
+          r.process === rules[i]?.process &&
+          r.process_path === rules[i]?.process_path &&
+          r.package_name === rules[i]?.package_name &&
+          r.uid === rules[i]?.uid &&
+          r.gid === rules[i]?.gid &&
+          r.network_type === rules[i]?.network_type &&
+          r.inbound === rules[i]?.inbound &&
           r.final === rules[i]?.final
         );
       if (!same) rules = parsed;
@@ -50,7 +104,22 @@
       action: r.action || 'route',
       outbounds: Array.isArray(r.outbounds) ? r.outbounds.join('\n') : '',
       domain: Array.isArray(r.domain) ? r.domain.join('\n') : '',
-      ip: Array.isArray(r.ip) ? r.ip.join('\n') : '',
+      domain_suffix: Array.isArray(r.domain_suffix) ? r.domain_suffix.join('\n') : '',
+      domain_keyword: Array.isArray(r.domain_keyword) ? r.domain_keyword.join('\n') : '',
+      domain_regex: Array.isArray(r.domain_regex) ? r.domain_regex.join('\n') : '',
+      ip_cidr: Array.isArray(r.ip_cidr) ? r.ip_cidr.join('\n') : '',
+      source_ip_cidr: Array.isArray(r.source_ip_cidr) ? r.source_ip_cidr.join('\n') : '',
+      port: Array.isArray(r.port) ? r.port.join('\n') : '',
+      source_port: Array.isArray(r.source_port) ? r.source_port.join('\n') : '',
+      network: Array.isArray(r.network) ? r.network.join('\n') : '',
+      protocol: Array.isArray(r.protocol) ? r.protocol.join('\n') : '',
+      process: Array.isArray(r.process) ? r.process.join('\n') : '',
+      process_path: Array.isArray(r.process_path) ? r.process_path.join('\n') : '',
+      package_name: Array.isArray(r.package_name) ? r.package_name.join('\n') : '',
+      uid: Array.isArray(r.uid) ? r.uid.join('\n') : '',
+      gid: Array.isArray(r.gid) ? r.gid.join('\n') : '',
+      network_type: Array.isArray(r.network_type) ? r.network_type.join('\n') : '',
+      inbound: Array.isArray(r.inbound) ? r.inbound.join('\n') : '',
       final: r.final || false,
     };
   }
@@ -60,7 +129,22 @@
       const obj: Record<string, any> = { action: r.action };
       if (r.outbounds.trim()) obj.outbounds = r.outbounds.split('\n').map((s: string) => s.trim()).filter(Boolean);
       if (r.domain.trim()) obj.domain = r.domain.split('\n').map((s: string) => s.trim()).filter(Boolean);
-      if (r.ip.trim()) obj.ip = r.ip.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.domain_suffix.trim()) obj.domain_suffix = r.domain_suffix.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.domain_keyword.trim()) obj.domain_keyword = r.domain_keyword.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.domain_regex.trim()) obj.domain_regex = r.domain_regex.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.ip_cidr.trim()) obj.ip_cidr = r.ip_cidr.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.source_ip_cidr.trim()) obj.source_ip_cidr = r.source_ip_cidr.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.port.trim()) obj.port = r.port.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.source_port.trim()) obj.source_port = r.source_port.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.network.trim()) obj.network = r.network.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.protocol.trim()) obj.protocol = r.protocol.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.process.trim()) obj.process = r.process.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.process_path.trim()) obj.process_path = r.process_path.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.package_name.trim()) obj.package_name = r.package_name.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.uid.trim()) obj.uid = r.uid.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.gid.trim()) obj.gid = r.gid.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.network_type.trim()) obj.network_type = r.network_type.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.inbound.trim()) obj.inbound = r.inbound.split('\n').map((s: string) => s.trim()).filter(Boolean);
       if (r.final) obj.final = true;
       return obj;
     });
@@ -73,7 +157,7 @@
   }
 
   function addRule() {
-    rules = [...rules, { action: 'route', outbounds: '', domain: '', ip: '', final: false }];
+    rules = [...rules, defaultRule()];
     syncValue();
   }
 
@@ -121,6 +205,28 @@
     const target = e.target as HTMLInputElement;
     updateRule(i, 'final', target.checked);
   }
+
+  // Поля для отображения в UI (в логическом порядке)
+  const fields: { key: keyof Rule; label: string; placeholder: string; rows: number }[] = [
+    { key: 'outbounds', label: 'Outbounds (по одному на строку)', placeholder: 'direct\nproxy', rows: 2 },
+    { key: 'domain', label: 'Domain (geosite-*)', placeholder: 'geosite:ru\ngeosite:google', rows: 2 },
+    { key: 'domain_suffix', label: 'Domain Suffix (например .ru)', placeholder: '.ru\n.su\n.xn--p1ai', rows: 2 },
+    { key: 'domain_keyword', label: 'Domain Keyword', placeholder: 'example\nblocked', rows: 2 },
+    { key: 'domain_regex', label: 'Domain Regex', placeholder: '.*\\.example\\.com', rows: 2 },
+    { key: 'ip_cidr', label: 'IP CIDR (geoip-*)', placeholder: 'geoip:ru\n10.0.0.0/8', rows: 2 },
+    { key: 'source_ip_cidr', label: 'Source IP CIDR', placeholder: '192.168.1.0/24', rows: 2 },
+    { key: 'port', label: 'Ports', placeholder: '80\n443\n8080', rows: 2 },
+    { key: 'source_port', label: 'Source Ports', placeholder: '1024-65535', rows: 2 },
+    { key: 'network', label: 'Network (tcp,udp)', placeholder: 'tcp\nudp', rows: 2 },
+    { key: 'protocol', label: 'Protocol (tls,http,quic,dns)', placeholder: 'tls\nhttp', rows: 2 },
+    { key: 'process', label: 'Process Name', placeholder: 'chrome\nfirefox', rows: 2 },
+    { key: 'process_path', label: 'Process Path', placeholder: '/usr/bin/curl', rows: 2 },
+    { key: 'package_name', label: 'Package Name (Android)', placeholder: 'com.example.app', rows: 2 },
+    { key: 'uid', label: 'UID', placeholder: '1000', rows: 1 },
+    { key: 'gid', label: 'GID', placeholder: '1000', rows: 1 },
+    { key: 'network_type', label: 'Network Type (wifi,ethernet,cellular)', placeholder: 'wifi\ncellular', rows: 2 },
+    { key: 'inbound', label: 'Inbound Tags', placeholder: 'inbound-1\ninbound-2', rows: 2 },
+  ];
 </script>
 
 <div class="route-rule-editor">
@@ -155,18 +261,19 @@
           <button type="button" class="remove" onclick={() => removeRule(i)} disabled={disabled}>✕</button>
         </div>
         <div class="rule-fields">
-          <div class="field">
-            <label for={`outbounds-${i}`}>Outbounds (через запятую)</label>
-            <textarea id={`outbounds-${i}`} rows="2" value={rule.outbounds} oninput={(e) => onRuleFieldChange(i, 'outbounds', e)} placeholder="direct\nproxy" disabled={disabled}></textarea>
-          </div>
-          <div class="field">
-            <label for={`domain-${i}`}>Domain (geosite-*)</label>
-            <textarea id={`domain-${i}`} rows="2" value={rule.domain} oninput={(e) => onRuleFieldChange(i, 'domain', e)} placeholder="geosite:ru\ngeosite:google" disabled={disabled}></textarea>
-          </div>
-          <div class="field">
-            <label for={`ip-${i}`}>IP (geoip-*)</label>
-            <textarea id={`ip-${i}`} rows="2" value={rule.ip} oninput={(e) => onRuleFieldChange(i, 'ip', e)} placeholder="geoip:ru\ngeoip:private" disabled={disabled}></textarea>
-          </div>
+          {#each fields as f}
+            <div class="field">
+              <label for={`${f.key}-${i}`}>{f.label}</label>
+              <textarea
+                id={`${f.key}-${i}`}
+                rows={f.rows}
+                value={rule[f.key]}
+                oninput={(e) => onRuleFieldChange(i, f.key, e)}
+                placeholder={f.placeholder}
+                disabled={disabled}
+              ></textarea>
+            </div>
+          {/each}
         </div>
       </div>
     {/each}

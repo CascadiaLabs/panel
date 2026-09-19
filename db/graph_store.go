@@ -116,9 +116,6 @@ func (s *Store) SaveGraphState(graphID string, state graph.State) error {
 	if _, err := tx.Exec(`DELETE FROM graph_edges WHERE graph_id = ?`, graphID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM graph_nodes WHERE graph_id = ?`, graphID); err != nil {
-		return err
-	}
 
 	now := time.Now().Unix()
 	for _, n := range state.Nodes {
@@ -135,8 +132,21 @@ func (s *Store) SaveGraphState(graphID string, state graph.State) error {
 				}
 			}
 		}
+		// UPSERT: обновляем существующий или вставляем новый (сохраняет inbound_routes через FK без CASCADE)
 		if _, err := tx.Exec(`INSERT INTO graph_nodes (id, graph_id, node_id, kind, protocol, tag, settings, pos_x, pos_y, entry, "exit", created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				graph_id = excluded.graph_id,
+				node_id = excluded.node_id,
+				kind = excluded.kind,
+				protocol = excluded.protocol,
+				tag = excluded.tag,
+				settings = excluded.settings,
+				pos_x = excluded.pos_x,
+				pos_y = excluded.pos_y,
+				entry = excluded.entry,
+				"exit" = excluded."exit",
+				updated_at = excluded.updated_at`,
 			n.ID, graphID, n.NodeID, n.Kind, n.Protocol, n.Tag, settings, n.PosX, n.PosY, btoi(n.Entry), btoi(n.Exit), now, now); err != nil {
 			return err
 		}

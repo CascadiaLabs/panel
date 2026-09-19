@@ -101,12 +101,14 @@ CREATE TABLE IF NOT EXISTS route_rules (
 CREATE INDEX IF NOT EXISTS idx_route_rules_graph ON route_rules(graph_id);
 
 -- Маппинг: inbound → route_rule (один inbound может иметь несколько правил).
+-- Без ON DELETE CASCADE, чтобы сохранять назначения при пересохранении графа (DELETE+INSERT в SaveGraphState).
 CREATE TABLE IF NOT EXISTS inbound_routes (
 	id           TEXT PRIMARY KEY,
-	inbound_id   TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
-	route_rule_id TEXT NOT NULL REFERENCES route_rules(id) ON DELETE CASCADE
+	inbound_id   TEXT NOT NULL REFERENCES graph_nodes(id),
+	route_rule_id TEXT NOT NULL REFERENCES route_rules(id)
 );
 CREATE INDEX IF NOT EXISTS idx_inbound_routes_inbound ON inbound_routes(inbound_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inbound_routes_unique ON inbound_routes(inbound_id, route_rule_id);
 
 -- VPN-пользователи: креды вшиваются в entry-inbound графа; подписка
 -- /sub/{sub_token} отдаёт все entry-inbound как v2ray share-links.
