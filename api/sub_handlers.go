@@ -270,7 +270,7 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 			{
 				"type":       "https",
 				"tag":        "dns-direct",
-				"server":     "dns.google",
+				"server":     "8.8.8.8",
 				"server_port": 443,
 				"path":       "/dns-query",
 				"tls": map[string]any{
