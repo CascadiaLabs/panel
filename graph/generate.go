@@ -515,7 +515,25 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 	} else {
 		cfg["outbounds"] = []map[string]any{}
 	}
-	route := map[string]any{"rules": rules}
+
+	// --- Build complete route rules with system rules ---
+	// Order is critical in sing-box:
+	// 1. sniff (extract domain from TLS SNI/QUIC)
+	// 2. hijack-dns (intercept DNS queries)
+	// 3. Specific domain/IP rules (RU, private, ads, etc.)
+	// 4. User-defined rules (from graph edges + assigned route rules)
+	// 5. resolve (resolve domains to IP for IP-based rules) — ПОСЛЕ domain-based правил!
+	// 6. final (default outbound)
+	systemRules := buildSystemRouteRules(directTag)
+	allRules := append(systemRules, rules...)
+
+	// resolve — резолвим домены в IP ПОСЛЕ всех domain-based правил,
+	// чтобы domain_suffix/geosite успели сработать до резолва.
+	allRules = append(allRules, map[string]any{
+		"action": "resolve",
+	})
+
+	route := map[string]any{"rules": allRules}
 	if directTag != "" {
 		route["final"] = directTag
 	}
@@ -525,6 +543,63 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 	cfg["dns"] = buildDNSConfig(outbounds, directTag)
 
 	return cfg, nil
+}
+
+// buildSystemRouteRules создаёт системные правила маршрутизации sing-box
+// в правильном порядке для корректной работы split-tunneling.
+func buildSystemRouteRules(directTag string) []map[string]any {
+	var rules []map[string]any
+
+	// 1. sniff — извлекать домен из TLS SNI / QUIC Server Name
+	// Должно быть ПЕРВЫМ, чтобы domain_* правила работали
+	rules = append(rules, map[string]any{
+		"action": "sniff",
+	})
+
+	// 2. hijack-dns — перехватывать DNS-запросы для domain-based routing
+	rules = append(rules, map[string]any{
+		"action":  "hijack-dns",
+		"protocol": "dns",
+	})
+
+	// 3. Private IP — блокировать/директ локальные адреса
+	rules = append(rules, map[string]any{
+		"action":   "route",
+		"ip_cidr":  []string{"geoip:private"},
+		"outbound": directTag,
+	})
+
+	// 4. RU geosite — российские домены (geosite:ru включает .ru, .su, .xn--p1ai, yandex, vk, gosuslugi, sber, ozon, wb и др.)
+	rules = append(rules, map[string]any{
+		"action":    "route",
+		"rule_set":  []string{"geosite:ru"},
+		"outbound":  directTag,
+	})
+
+	// 5. RU geoip — российские IP-диапазоны
+	rules = append(rules, map[string]any{
+		"action":   "route",
+		"ip_cidr":  []string{"geoip:ru"},
+		"outbound": directTag,
+	})
+
+	// 6. Domain suffix .ru/.su/.xn--p1ai — запасной вариант если geosite не сработал
+	rules = append(rules, map[string]any{
+		"action":        "route",
+		"domain_suffix": []string{".ru", ".su", ".xn--p1ai"},
+		"outbound":      directTag,
+	})
+
+	// 7. Ads blocking — geosite category-ads
+	rules = append(rules, map[string]any{
+		"action":  "block",
+		"domain":  []string{"geosite:category-ads", "geosite:category-ads-plus"},
+	})
+
+	// Note: resolve НЕ добавляем здесь — он будет добавлен ПОСЛЕ пользовательских правил
+	// в generateNodeConfig, чтобы domain-based правила успели сработать до резолва.
+
+	return rules
 }
 
 // buildDNSConfig создаёт DNS-конфигурацию с split DNS для .ru доменов.
