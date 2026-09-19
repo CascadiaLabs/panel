@@ -257,11 +257,11 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 		"servers": []map[string]any{
 			// Bootstrap DNS: direct, no proxy — нужен для разрезолва адресов VPN-серверов
 			{
-				"type":       "https",
-				"tag":        "dns-bootstrap",
-				"server":     "1.1.1.1",
+				"type":        "https",
+				"tag":         "dns-bootstrap",
+				"server":      "1.1.1.1",
 				"server_port": 443,
-				"path":       "/dns-query",
+				"path":        "/dns-query",
 				"tls": map[string]any{
 					"enabled":     true,
 					"server_name": "cloudflare-dns.com",
@@ -269,12 +269,12 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 			},
 			// Remote DNS: через прокси — для обхода цензуры после установления туннеля
 			{
-				"type":       "https",
-				"tag":        "dns-remote",
-				"server":     "1.1.1.1",
+				"type":        "https",
+				"tag":         "dns-remote",
+				"server":      "1.1.1.1",
 				"server_port": 443,
-				"path":       "/dns-query",
-				"detour":     "proxy-group",
+				"path":        "/dns-query",
+				"detour":      "proxy-group",
 				"tls": map[string]any{
 					"enabled":     true,
 					"server_name": "cloudflare-dns.com",
@@ -282,11 +282,11 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 			},
 			// Direct DNS: для русских доменов и служебных запросов
 			{
-				"type":       "https",
-				"tag":        "dns-direct",
-				"server":     "8.8.8.8",
+				"type":        "https",
+				"tag":         "dns-direct",
+				"server":      "8.8.8.8",
 				"server_port": 443,
-				"path":       "/dns-query",
+				"path":        "/dns-query",
 				"tls": map[string]any{
 					"enabled":     true,
 					"server_name": "dns.google",
@@ -294,39 +294,42 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 			},
 		},
 		"rules": []map[string]any{
+			// .ru domains -> direct DNS
+			{"action": "route", "domain_suffix": []string{".ru", ".su", ".xn--p1ai"}, "server": "dns-direct"},
+			// geosite:ru -> direct DNS
+			{"action": "route", "rule_set": []string{"geosite-category-ru"}, "server": "dns-direct"},
+			// Clash Direct mode -> direct DNS
 			{"action": "route", "clash_mode": "Direct", "server": "dns-direct"},
+			// Clash Global mode -> remote DNS
 			{"action": "route", "clash_mode": "Global", "server": "dns-remote"},
 		},
-		"final": "dns-remote",
+		"final":   "dns-remote",
 		"default": "dns-bootstrap",
 	}
 
 	// Route rules (современный формат sing-box 1.14+ с action: "route")
+	// Order is critical:
+	// 1. sniff - extract domain from TLS SNI/QUIC
+	// 2. hijack-dns - intercept DNS queries for domain-based routing
+	// 3. Private IP - direct
+	// 4. RU geosite - Russian domains via geosite (matches before resolve)
+	// 5. RU geoip - Russian IP ranges
+	// 6. Domain suffix fallback - .ru/.su/.xn--p1ai
+	// 7. User clash_mode rules
+	// 8. resolve - AFTER all domain-based rules
+	// 9. final = proxy-group
 	routeRules := []map[string]any{
 		{"action": "sniff"},
 		{"protocol": "dns", "action": "hijack-dns"},
-		{"action": "resolve"},
+		{"action": "route", "ip_is_private": true, "outbound": "direct"},
+		{"action": "route", "rule_set": []string{"geosite-category-ru"}, "outbound": "direct"},
+		{"action": "route", "ip_cidr": []string{"geoip:ru"}, "outbound": "direct"},
+		{"action": "route", "domain_suffix": []string{".ru", ".su", ".xn--p1ai"}, "outbound": "direct"},
+		{"action": "route", "domain_suffix": []string{"vk.com", "yandex.ru", "gosuslugi.ru", "sberbank.ru"}, "outbound": "direct"},
 		{"action": "route", "clash_mode": "Direct", "outbound": "direct"},
 		{"action": "route", "clash_mode": "Global", "outbound": "proxy-group"},
-		{"action": "route", "ip_is_private": true, "outbound": "direct"},
+		{"action": "resolve"},
 	}
-
-	// Russian domain rules
-	routeRules = append(routeRules, map[string]any{
-		"action":      "route",
-		"outbound":    "direct",
-		"domain_suffix": []string{
-			".ru", ".su", ".xn--p1ai", "vk.com", "yandex.ru",
-			"gosuslugi.ru", "sberbank.ru",
-		},
-	})
-
-	// Sing-box geoip/geosite rule sets (актуальные теги)
-	routeRules = append(routeRules, map[string]any{
-		"action":     "route",
-		"outbound":   "direct",
-		"rule_set":   []string{"geosite-category-ru", "geoip-ru"},
-	})
 
 	route := map[string]any{
 		"rule_set": []map[string]any{

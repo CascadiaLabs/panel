@@ -11,7 +11,7 @@ import (
 func TestGenerateTwoNodeCascade(t *testing.T) {
 	st, phys := twoNodeCascade(t)
 
-	configs, err := Generate(st, phys)
+	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,14 +71,18 @@ func TestGenerateTwoNodeCascade(t *testing.T) {
 		t.Fatal("out-a must not have reality (target in-b has plain TLS)")
 	}
 
-	// правило роутинга: in-a → out-a
+	// правило роутинга: in-a → out-a (should be among system rules)
 	rules := cfgA["route"].(map[string]any)["rules"].([]any)
-	if len(rules) != 1 {
-		t.Fatalf("nodeA rules: %v", rules)
+	foundRuleA := false
+	for _, rr := range rules {
+		m := rr.(map[string]any)
+		if m["inbound"] != nil && m["inbound"].([]any)[0] == "in-a" && m["outbound"] == "out-a" {
+			foundRuleA = true
+			break
+		}
 	}
-	rule := rules[0].(map[string]any)
-	if rule["inbound"].([]any)[0] != "in-a" || rule["outbound"] != "out-a" {
-		t.Fatalf("rule: %v", rule)
+	if !foundRuleA {
+		t.Fatalf("in-a → out-a rule missing: %v", rules)
 	}
 	// final — авто-direct
 	if cfgA["route"].(map[string]any)["final"] != DefaultDirectTag {
@@ -99,14 +103,17 @@ func TestGenerateTwoNodeCascade(t *testing.T) {
 		t.Fatalf("in-b tls: %v", btls)
 	}
 	// out-b direct + правило
-	var foundRule bool
+	var foundRuleB bool
 	for _, rr := range cfgB["route"].(map[string]any)["rules"].([]any) {
 		m := rr.(map[string]any)
-		if m["inbound"].([]any)[0] == "in-b" && m["outbound"] == "out-b" {
-			foundRule = true
+		if m["inbound"] != nil {
+			inboundArr := m["inbound"].([]any)
+			if len(inboundArr) > 0 && inboundArr[0] == "in-b" && m["outbound"] == "out-b" {
+				foundRuleB = true
+			}
 		}
 	}
-	if !foundRule {
+	if !foundRuleB {
 		t.Fatalf("in-b → out-b rule missing: %v", cfgB["route"])
 	}
 	if cfgB["route"].(map[string]any)["final"] != "out-b" {
@@ -148,7 +155,7 @@ func TestGenerateRealityMirror(t *testing.T) {
 	}
 	phys := []PhysNode{{ID: "n1", Name: "1", GRPCURL: "n1:6237"}, {ID: "n2", Name: "2", GRPCURL: "n2:6237"}}
 
-	configs, err := Generate(st, phys)
+	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +210,7 @@ func TestGenerateRealityHandshakePortDefault(t *testing.T) {
 	}
 	phys := []PhysNode{{ID: "n1", Name: "1", GRPCURL: "n1:6237"}}
 
-	configs, err := Generate(st, phys)
+	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +252,7 @@ func TestGenerateRulesFromEdges(t *testing.T) {
 	}
 	phys := []PhysNode{{ID: "n1", Name: "1", GRPCURL: "n1:6237"}, {ID: "n2", Name: "2", GRPCURL: "n2:6237"}}
 
-	configs, err := Generate(st, phys)
+	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,15 +261,20 @@ func TestGenerateRulesFromEdges(t *testing.T) {
 		t.Fatal(err)
 	}
 	rules := cfg["route"].(map[string]any)["rules"].([]any)
-	if len(rules) != 1 {
-		t.Fatalf("rules: %v", rules)
+	// Find the user rule among system rules
+	foundUserRule := false
+	for _, rr := range rules {
+		m := rr.(map[string]any)
+		if m["domain_suffix"] != nil && m["domain_suffix"].([]any)[0] == ".ru" && m["network"] != nil && m["network"].([]any)[0] == "tcp" {
+			if m["outbound"] != "bal" {
+				t.Fatalf("rule outbound: %v", m)
+			}
+			foundUserRule = true
+			break
+		}
 	}
-	rule := rules[0].(map[string]any)
-	if rule["outbound"] != "bal" {
-		t.Fatalf("rule outbound: %v", rule)
-	}
-	if rule["domain_suffix"].([]any)[0] != ".ru" || rule["network"].([]any)[0] != "tcp" {
-		t.Fatalf("rule match: %v", rule)
+	if !foundUserRule {
+		t.Fatalf("user rule not found in: %v", rules)
 	}
 
 	// urltest-группа с членом o1
@@ -327,7 +339,7 @@ func TestGenerateHysteria2AndTUIC(t *testing.T) {
 	}
 	phys := []PhysNode{{ID: "n1", Name: "1", GRPCURL: "n1:6237"}, {ID: "n2", Name: "2", GRPCURL: "n2:6237"}}
 
-	configs, err := Generate(st, phys)
+	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +393,7 @@ func TestRelayUserNoClients(t *testing.T) {
 		TLS:       &InboundTLS{Enabled: true, ServerName: "b.example.com", CertPEM: "PEM-B"},
 	})
 
-	configs, err := Generate(st, phys)
+	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,7 +440,7 @@ func TestGenerateRejectsInvalid(t *testing.T) {
 	st := State{Nodes: []Node{
 		{ID: "x", NodeID: "n1", Kind: KindOutbound, Protocol: "vless", Tag: "x"},
 	}}
-	_, err := Generate(st, []PhysNode{{ID: "n1", Name: "1", GRPCURL: "n:1"}})
+	_, err := Generate(st, []PhysNode{{ID: "n1", Name: "1", GRPCURL: "n:1"}}, InboundRouteRules{})
 	if err == nil || !strings.Contains(err.Error(), "невалиден") {
 		t.Fatalf("want validation error, got %v", err)
 	}

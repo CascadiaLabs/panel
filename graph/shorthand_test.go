@@ -50,7 +50,7 @@ func TestGenerateShorthandCascade(t *testing.T) {
 	if res.HasErrors() || len(res.Warnings) != 0 {
 		t.Fatalf("unexpected validation: %+v", res)
 	}
-	configs, err := Generate(st, phys)
+	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestGenerateShorthandCascade(t *testing.T) {
 	if exitRule["inbound"].([]any)[0] != "b" || configOutbound(t, b, exitRule["outbound"].(string))["type"] != "direct" {
 		t.Fatalf("missing explicit Internet route: %v", exitRule)
 	}
-	again, err := Generate(st, phys)
+	again, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil || !reflect.DeepEqual(configs, again) || string(mustJSON(t, st)) != before {
 		t.Fatalf("generation was not deterministic/nonmutating: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestGenerateExplicitRelayTargetHost(t *testing.T) {
 	st, phys := shorthandCascade(t)
 	st.Nodes = append(st.Nodes, Node{ID: "out", NodeID: "A", Kind: KindOutbound, Protocol: "trojan", Tag: "out"})
 	st.Edges = []Edge{{SourceID: "a", TargetID: "out"}, {SourceID: "out", TargetID: "b"}}
-	configs, err := Generate(st, phys)
+	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestGenerateBalancerInboundCandidates(t *testing.T) {
 			phys = append(phys, PhysNode{ID: "C", GRPCURL: "c.example:6237"})
 			st.Edges = []Edge{{SourceID: "a", TargetID: "bal"}, {SourceID: "bal", TargetID: "b"}, {SourceID: "bal", TargetID: "c"}, {SourceID: "bal", TargetID: "local"}}
 			before := string(mustJSON(t, st))
-			configs, err := Generate(st, phys)
+			configs, err := Generate(st, phys, InboundRouteRules{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -123,7 +123,7 @@ func TestGenerateBalancerInboundCandidates(t *testing.T) {
 			for i, j := 0, len(st.Edges)-1; i < j; i, j = i+1, j-1 {
 				st.Edges[i], st.Edges[j] = st.Edges[j], st.Edges[i]
 			}
-			again, err := Generate(st, phys)
+			again, err := Generate(st, phys, InboundRouteRules{})
 			if err != nil || !reflect.DeepEqual(configs, again) {
 				t.Fatalf("edge order changed output: %v", err)
 			}
@@ -155,7 +155,7 @@ func TestGenerateBalancerToInboundSameNode(t *testing.T) {
 	if res.HasErrors() {
 		t.Fatalf("same-node balancer relay must validate: %+v", res.Errors)
 	}
-	configs, err := Generate(st, phys)
+	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestGenerateBalancerToInboundSameNode(t *testing.T) {
 	if localRule == nil || configOutbound(t, a, localRule["outbound"].(string))["server"] != "target.example" {
 		t.Fatalf("local inbound must continue to the next cascade: %v", localRule)
 	}
-	again, err := Generate(st, phys)
+	again, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil || !reflect.DeepEqual(configs, again) || string(mustJSON(t, st)) != before {
 		t.Fatalf("generation was not deterministic/nonmutating: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestShorthandValidation(t *testing.T) {
 			if !hasCode(res.Errors, tc.code) {
 				t.Fatalf("want %s: %+v", tc.code, res)
 			}
-			if _, err := Generate(st, phys); err == nil {
+			if _, err := Generate(st, phys, InboundRouteRules{}); err == nil {
 				t.Fatal("compiler accepted invalid original graph")
 			}
 			if tc.code == "cycle" {
@@ -252,7 +252,7 @@ func TestInboundExitWithSpecificRule(t *testing.T) {
 			Settings: mustJSON(t, RuleSettings{Domain: []string{"example.org"}})},
 		Node{ID: "out", NodeID: "A", Kind: KindOutbound, Protocol: "trojan", Tag: "out"})
 	st.Edges = []Edge{{SourceID: "a", TargetID: "r"}, {SourceID: "r", TargetID: "out"}, {SourceID: "out", TargetID: "b"}}
-	configs, err := Generate(st, phys)
+	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func TestInternalTagsAvoidCollisions(t *testing.T) {
 		Node{ID: "reserved", Tag: DefaultDirectTag, NodeID: "B", Kind: KindRule, Protocol: "match", Settings: mustJSON(t, RuleSettings{Domain: []string{"example.org"}})},
 		Node{ID: "exit", Tag: "existing-direct", NodeID: "B", Kind: KindOutbound, Protocol: "direct"})
 	st.Edges = append(st.Edges, Edge{SourceID: "reserved", TargetID: "exit"})
-	configs, err := Generate(st, phys)
+	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,7 @@ func TestInternalTagsAvoidCollisions(t *testing.T) {
 	// Force an automatic direct next to a user-owned non-direct reserved tag.
 	st, phys = shorthandCascade(t)
 	st.Nodes[0].Tag = DefaultDirectTag
-	configs, err = Generate(st, phys)
+	configs, err = Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +320,7 @@ func TestRuleToInboundShorthand(t *testing.T) {
 	if res.HasErrors() {
 		t.Fatalf("rule→inbound must validate: %+v", res.Errors)
 	}
-	configs, err := Generate(st, phys)
+	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
