@@ -255,6 +255,19 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 	// DNS (sing-box 1.14+ формат)
 	dns := map[string]any{
 		"servers": []map[string]any{
+			// Bootstrap DNS: direct, no proxy — нужен для разрезолва адресов VPN-серверов
+			{
+				"type":       "https",
+				"tag":        "dns-bootstrap",
+				"server":     "1.1.1.1",
+				"server_port": 443,
+				"path":       "/dns-query",
+				"tls": map[string]any{
+					"enabled":     true,
+					"server_name": "cloudflare-dns.com",
+				},
+			},
+			// Remote DNS: через прокси — для обхода цензуры после установления туннеля
 			{
 				"type":       "https",
 				"tag":        "dns-remote",
@@ -267,6 +280,7 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 					"server_name": "cloudflare-dns.com",
 				},
 			},
+			// Direct DNS: для русских доменов и служебных запросов
 			{
 				"type":       "https",
 				"tag":        "dns-direct",
@@ -284,6 +298,7 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 			{"action": "route", "clash_mode": "Global", "server": "dns-remote"},
 		},
 		"final": "dns-remote",
+		"default": "dns-bootstrap",
 	}
 
 	// Route rules (современный формат sing-box 1.14+ с action: "route")
@@ -331,7 +346,7 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 		"rules":                  routeRules,
 		"final":                  "proxy-group",
 		"auto_detect_interface":  true,
-		"default_domain_resolver": "dns-remote",
+		"default_domain_resolver": "dns-bootstrap",
 	}
 
 	// Клиентский inbound: TUN (sing-box 1.14+ формат)
