@@ -246,7 +246,12 @@ func (h *Handler) GraphConfigs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	configs, err := graph.Generate(state, h.physNodes(r))
+	inboundRouteRules, err := h.buildInboundRouteRules(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	configs, err := graph.Generate(state, h.physNodes(r), inboundRouteRules)
 	if err != nil {
 		writeErr422(w, err.Error())
 		return
@@ -294,7 +299,12 @@ func (h *Handler) deployGraph(r *http.Request, id string) ([]deployReport, bool,
 	// дал бы ноде конфиг без uuid из подписки
 	state = h.store.InjectPanelUsers(id, state)
 
-	configs, err := graph.Generate(state, h.physNodes(r))
+	inboundRouteRules, err := h.buildInboundRouteRules(id)
+	if err != nil {
+		return nil, false, err
+	}
+
+	configs, err := graph.Generate(state, h.physNodes(r), inboundRouteRules)
 	if err != nil {
 		return nil, false, err
 	}
@@ -396,3 +406,37 @@ func (h *Handler) GenerateSecret(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]string{"value": value})
 }
+
+// buildInboundRouteRules строит карту inbound_id -> []RouteRuleItem из назначений в БД.
+func (h *Handler) buildInboundRouteRules(graphID string) (graph.InboundRouteRules, error) {
+	assignments, err := h.store.ListInboundRouteAssignments(graphID)
+	if err != nil {
+		return nil, err
+	}
+	if len(assignments) == 0 {
+		return graph.InboundRouteRules{}, nil
+	}
+
+	result := make(graph.InboundRouteRules)
+	for inboundID, ruleIDs := range assignments {
+		var items []graph.RouteRuleItem
+		for _, ruleID := range ruleIDs {
+			rule, err := h.store.GetRouteRule(ruleID)
+			if err != nil {
+				// Пропускаем несуществующие правила, но логируем
+				continue
+			}
+			var ruleItems []graph.RouteRuleItem
+			if err := json.Unmarshal([]byte(rule.RulesJSON), &ruleItems); err != nil {
+				continue
+			}
+			items = append(items, ruleItems...)
+		}
+		if len(items) > 0 {
+			result[inboundID] = items
+		}
+	}
+	return result, nil
+}
+
+// --- Утилиты генерации секретов ---

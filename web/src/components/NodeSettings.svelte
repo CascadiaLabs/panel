@@ -34,15 +34,19 @@
   let routeRules: RouteRule[] = $state([]);
   let assignedRuleIds: Set<string> = $state(new Set());
   let rulesLoading = $state(false);
+  let rulesError = $state('');
 
   async function loadRouteRules() {
     if (!graphId || graphNode.kind !== 'inbound') return;
     rulesLoading = true;
+    rulesError = '';
     try {
-      routeRules = await listRouteRules(graphId);
+      // Load ALL route rules (including global non-default) so they can be assigned to any inbound
+      routeRules = await listRouteRules('');
       const resp = await getInboundRouteAssignments(graphNode.id);
       assignedRuleIds = new Set(resp.route_rule_ids);
     } catch (e) {
+      rulesError = e instanceof Error ? e.message : String(e);
       console.error('Failed to load route rules:', e);
     } finally {
       rulesLoading = false;
@@ -50,16 +54,32 @@
   }
 
   async function toggleRule(ruleId: string) {
-    if (assignedRuleIds.has(ruleId)) {
+    const wasAssigned = assignedRuleIds.has(ruleId);
+    if (wasAssigned) {
       assignedRuleIds.delete(ruleId);
-      try { await unassignInboundRoute(graphNode.id, ruleId); } catch(e) { console.error('Failed to unassign:', e); }
     } else {
       assignedRuleIds.add(ruleId);
-      try { await assignInboundRoute(graphNode.id, ruleId); } catch(e) { console.error('Failed to assign:', e); }
     }
-    // Reload to sync with server
-    const resp = await getInboundRouteAssignments(graphNode.id);
-    assignedRuleIds = new Set(resp.route_rule_ids);
+    rulesError = '';
+    try {
+      if (wasAssigned) {
+        await unassignInboundRoute(graphNode.id, ruleId);
+      } else {
+        await assignInboundRoute(graphNode.id, ruleId);
+      }
+      // Reload to sync with server
+      const resp = await getInboundRouteAssignments(graphNode.id);
+      assignedRuleIds = new Set(resp.route_rule_ids);
+    } catch (e) {
+      // Revert on error
+      if (wasAssigned) {
+        assignedRuleIds.add(ruleId);
+      } else {
+        assignedRuleIds.delete(ruleId);
+      }
+      rulesError = e instanceof Error ? e.message : String(e);
+      console.error('Failed to toggle route rule:', e);
+    }
   }
 
   // Load route rules when inbound is selected
@@ -337,6 +357,9 @@
 
       <!-- Маршрутные правила -->
       <h3>Маршрутные правила</h3>
+      {#if rulesError}
+        <p class="error">{rulesError}</p>
+      {/if}
       {#if rulesLoading}
         <p class="hint">Загрузка правил…</p>
       {:else if routeRules.length === 0}
@@ -347,6 +370,11 @@
             <label class="rule-check">
               <input type="checkbox" checked={assignedRuleIds.has(rule.id)} onchange={() => toggleRule(rule.id)} />
               <span class="rule-name">{rule.name}</span>
+              {#if rule.graph_id && rule.graph_id !== graphId}
+                <span class="rule-scope" title="Глобальное правило">🌐</span>
+              {:else if rule.is_default}
+                <span class="rule-scope" title="Дефолтное правило">⭐</span>
+              {/if}
             </label>
           {/each}
         </div>
@@ -567,5 +595,7 @@
   .rule-list { display: flex; flex-direction: column; gap: 0.35rem; }
   .rule-check { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.8125rem; }
   .rule-check input { width: auto; }
-  .rule-name { color: #e2e8f0; }
+  .rule-name { color: #e2e8f0; flex: 1; }
+  .rule-scope { font-size: 0.7rem; opacity: 0.7; }
+  .error { color: #f87171; font-size: 0.75rem; margin-bottom: 0.5rem; }
 </style>

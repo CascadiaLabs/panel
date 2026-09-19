@@ -7,9 +7,24 @@ import (
 	"strings"
 )
 
+// RouteRuleItem — правило маршрутизации sing-box (соответствует db.RouteRuleItem).
+type RouteRuleItem struct {
+	Name      string   `json:"name"`
+	Action    string   `json:"action"`
+	Outbounds []string `json:"outbounds,omitempty"`
+	Domain    []string `json:"domain,omitempty"`
+	IP        []string `json:"ip,omitempty"`
+	Final     bool     `json:"final,omitempty"`
+}
+
+// InboundRouteRules — правила маршрутизации, назначенные на inbound'ы.
+// Ключ — ID inbound-элемента графа, значение — список правил.
+type InboundRouteRules map[string][]RouteRuleItem
+
 // Generate компилирует граф в map[физическая нода]конфиг sing-box (нативный JSON).
 // Граф обязан пройти валидацию; при ошибках возвращается список.
-func Generate(st State, phys []PhysNode) (map[string]string, error) {
+// inboundRouteRules — дополнительные правила маршрутизации, назначенные на inbound'ы через БД.
+func Generate(st State, phys []PhysNode, inboundRouteRules InboundRouteRules) (map[string]string, error) {
 	vd := Validator{State: st, Nodes: phys}
 	res := vd.Validate()
 	if res.HasErrors() {
@@ -58,7 +73,7 @@ func Generate(st State, phys []PhysNode) (map[string]string, error) {
 	})
 
 	for _, physID := range usedList {
-		cfg, err := generateNodeConfig(st, physID, physByID, byID, cascadeTarget)
+		cfg, err := generateNodeConfig(st, physID, physByID, byID, cascadeTarget, inboundRouteRules)
 		if err != nil {
 			return nil, fmt.Errorf("нода %s: %w", physByID[physID].Name, err)
 		}
@@ -72,7 +87,7 @@ func Generate(st State, phys []PhysNode) (map[string]string, error) {
 }
 
 // generateNodeConfig строит конфиг sing-box для одной физической ноды.
-func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, byID map[string]Node, cascadeTarget map[string]Node) (map[string]any, error) {
+func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, byID map[string]Node, cascadeTarget map[string]Node, inboundRouteRules InboundRouteRules) (map[string]any, error) {
 	var inbounds, outbounds, rules []map[string]any
 
 	mine := func(n Node) bool { return n.NodeID == physID }
@@ -381,6 +396,52 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 		rules = append(rules, rule)
 	}
 
+	// --- assigned route rules (from DB) ---
+	// Добавляем правила, назначенные на inbound'ы через панель маршрутизации.
+	// Они идут ПОСЛЕ графовых правил, но ДО финального direct (route.final).
+	for _, in := range sorted(inboundEls) {
+		assigned := inboundRouteRules[in.ID]
+		for _, item := range assigned {
+			rule := map[string]any{
+				"inbound": []string{in.Tag},
+			}
+			if item.Action != "" {
+				rule["action"] = item.Action
+			}
+			if len(item.Outbounds) > 0 {
+				rule["outbound"] = item.Outbounds
+			}
+			if len(item.Domain) > 0 {
+				rule["domain"] = item.Domain
+			}
+			if len(item.IP) > 0 {
+				rule["ip_cidr"] = item.IP
+			}
+			if item.Final {
+				rule["final"] = true
+			}
+			rules = append(rules, rule)
+		}
+	}
+
+	// --- сортировка правил маршрутизации ---
+	// Принцип: конкретные правила (с условиями domain/ip/port) ДО catch-all правил.
+	// Внутри групп сохраняем исходный порядок (stable sort).
+	sort.SliceStable(rules, func(i, j int) bool {
+		hasMatchI := ruleHasMatchConditions(rules[i])
+		hasMatchJ := ruleHasMatchConditions(rules[j])
+		if hasMatchI != hasMatchJ {
+			return hasMatchI // правила с условиями идут раньше
+		}
+		// Если обе имеют условия или обе catch-all: final=true раньше
+		finalI := getBool(rules[i], "final")
+		finalJ := getBool(rules[j], "final")
+		if finalI != finalJ {
+			return finalI
+		}
+		return false // сохраняем исходный порядок
+	})
+
 	cfg := map[string]any{
 		"log": map[string]any{"level": "info"},
 	}
@@ -399,7 +460,80 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 		route["final"] = directTag
 	}
 	cfg["route"] = route
+
+	// --- DNS configuration with split DNS for .ru domains ---
+	cfg["dns"] = buildDNSConfig(outbounds, directTag)
+
 	return cfg, nil
+}
+
+// buildDNSConfig создаёт DNS-конфигурацию с split DNS для .ru доменов.
+// Использует системный DNS для bootstrap/direct, а для остального — DNS через прокси (если есть).
+func buildDNSConfig(outbounds []map[string]any, directTag string) map[string]any {
+	// Находим прокси-outbound для remote DNS (первый не-direct outbound)
+	var proxyTag string
+	for _, ob := range outbounds {
+		if t, _ := ob["tag"].(string); t != "" && t != directTag && ob["type"] != "direct" {
+			proxyTag = t
+			break
+		}
+	}
+	// Если прокси нет, используем directTag для всего
+	if proxyTag == "" {
+		proxyTag = directTag
+	}
+
+	servers := []map[string]any{
+		{
+			"tag":        "dns-bootstrap",
+			"address":    "local",
+			"detour":     directTag,
+		},
+		{
+			"tag":        "dns-direct",
+			"address":    "local",
+			"detour":     directTag,
+		},
+		{
+			"tag":        "dns-remote",
+			"address":    "https://1.1.1.1/dns-query",
+			"detour":     proxyTag,
+		},
+	}
+
+	rules := []map[string]any{
+		// .ru domains -> direct DNS
+		{
+			"action":      "route",
+			"domain_suffix": []string{".ru", ".su", ".xn--p1ai"},
+			"server":      "dns-direct",
+		},
+		// geosite:ru -> direct DNS
+		{
+			"action":   "route",
+			"rule_set": []string{"geosite:ru"},
+			"server":   "dns-direct",
+		},
+		// Clash Direct mode -> direct DNS
+		{
+			"action":     "route",
+			"clash_mode": "Direct",
+			"server":     "dns-direct",
+		},
+		// Clash Global mode -> remote DNS
+		{
+			"action":     "route",
+			"clash_mode": "Global",
+			"server":     "dns-remote",
+		},
+	}
+
+	return map[string]any{
+		"servers": servers,
+		"rules":   rules,
+		"default": "dns-bootstrap",
+		"final":   "dns-remote",
+	}
 }
 
 // DefaultDirectTag — тег неявного direct-outbound (route.final).
@@ -667,4 +801,38 @@ func applyRuleMatch(rule map[string]any, rs RuleSettings) {
 	if rs.Invert {
 		rule["invert"] = true
 	}
+}
+
+// ruleHasMatchConditions проверяет, есть ли у правила условия совпадения (domain, ip, port и т.д.).
+// Правила без условий — это catch-all (final/fallback).
+func ruleHasMatchConditions(rule map[string]any) bool {
+	matchKeys := []string{"domain", "domain_suffix", "domain_keyword", "ip_cidr", "ip", "port", "network", "protocol", "source", "source_port", "process", "process_path", "package_name", "uid", "gid", "network_type", "inbound"}
+	for _, k := range matchKeys {
+		if v, ok := rule[k]; ok {
+			switch vv := v.(type) {
+			case []any:
+				if len(vv) > 0 {
+					return true
+				}
+			case []string:
+				if len(vv) > 0 {
+					return true
+				}
+			case string:
+				if vv != "" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func getBool(m map[string]any, key string) bool {
+	if v, ok := m[key]; ok {
+		if b, ok := v.(bool); ok {
+			return b
+		}
+	}
+	return false
 }
