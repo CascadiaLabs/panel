@@ -270,12 +270,12 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 			{
 				"type":       "https",
 				"tag":        "dns-direct",
-				"server":     "77.88.8.8",
+				"server":     "dns.google",
 				"server_port": 443,
 				"path":       "/dns-query",
 				"tls": map[string]any{
 					"enabled":     true,
-					"server_name": "doh.dns.yandex.net",
+					"server_name": "dns.google",
 				},
 			},
 		},
@@ -283,7 +283,7 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 			{"action": "route", "clash_mode": "Direct", "server": "dns-direct"},
 			{"action": "route", "clash_mode": "Global", "server": "dns-remote"},
 		},
-		"final": "dns-direct",
+		"final": "dns-remote",
 	}
 
 	// Route rules (современный формат sing-box 1.14+ с action: "route")
@@ -331,7 +331,7 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 		"rules":                  routeRules,
 		"final":                  "proxy-group",
 		"auto_detect_interface":  true,
-		"default_domain_resolver": "dns-direct",
+		"default_domain_resolver": "dns-remote",
 	}
 
 	// Клиентский inbound: TUN (sing-box 1.14+ формат)
