@@ -320,18 +320,12 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 				"type":     "remote",
 				"format":   "binary",
 				"url":      "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs",
-				"http_client": map[string]any{
-					"detour": "direct",
-				},
 			},
 			{
 				"tag":      "geoip-ru",
 				"type":     "remote",
 				"format":   "binary",
 				"url":      "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs",
-				"http_client": map[string]any{
-					"detour": "direct",
-				},
 			},
 		},
 		"rules":                  routeRules,
