@@ -275,7 +275,7 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 				"path":       "/dns-query",
 				"tls": map[string]any{
 					"enabled":     true,
-					"server_name": "dns.yandex.ru",
+					"server_name": "doh.dns.yandex.net",
 				},
 			},
 		},
