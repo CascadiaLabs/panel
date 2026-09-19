@@ -282,9 +282,9 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 			},
 		},
 		"rules": []map[string]any{
-			{"server": "dns-direct"},
-			{"clash_mode": "Direct", "server": "dns-direct"},
-			{"clash_mode": "Global", "server": "dns-remote"},
+			{"action": "resolve", "server": "dns-direct"},
+			{"action": "resolve", "clash_mode": "Direct", "server": "dns-direct"},
+			{"action": "resolve", "clash_mode": "Global", "server": "dns-remote"},
 		},
 	}
 
@@ -334,15 +334,16 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 		"auto_detect_interface": true,
 	}
 
-	// Клиентский inbound: TUN
+	// Клиентский inbound: TUN (sing-box 1.14+ формат)
 	inbounds := []map[string]any{
 		{
-			"type":          "tun",
-			"tag":           "tun-in",
-			"address":       []string{"172.19.0.1/30", "fdfe:dcba:9876::1/126"},
-			"auto_route":    true,
-			"strict_route":  true,
-			"sniff":         true,
+			"type":           "tun",
+			"tag":            "tun-in",
+			"inet4_address":  []string{"172.19.0.1/30"},
+			"inet6_address":  []string{"fdfe:dcba:9876::1/126"},
+			"auto_route":     true,
+			"strict_route":   true,
+			"sniff":          true,
 		},
 	}
 
