@@ -234,7 +234,7 @@ func TestGenerateRulesFromEdges(t *testing.T) {
 			{ID: "in1", NodeID: "n1", Kind: KindInbound, Protocol: "vless", Tag: "in1", Entry: true,
 				Settings: mustJSON(t, InboundSettings{ListenPort: 1, Users: []InboundUser{{Name: "u", UUID: "u1"}}})},
 			{ID: "rule1", NodeID: "n1", Kind: KindRule, Protocol: "match", Tag: "rule1",
-				Settings: mustJSON(t, RuleSettings{DomainSuffix: []string{".ru"}, Network: []string{"tcp"}})},
+				Settings: mustJSON(t, RuleSettings{DomainSuffix: []string{"ru"}, Network: []string{"tcp"}})},
 			{ID: "od", NodeID: "n1", Kind: KindOutbound, Protocol: "direct", Tag: "od"},
 			{ID: "bal", NodeID: "n1", Kind: KindBalancer, Protocol: "urltest", Tag: "bal",
 				Settings: mustJSON(t, BalancerSettings{Interval: "3m", Tolerance: 50})},
@@ -265,7 +265,7 @@ func TestGenerateRulesFromEdges(t *testing.T) {
 	foundUserRule := false
 	for _, rr := range rules {
 		m := rr.(map[string]any)
-		if m["domain_suffix"] != nil && m["domain_suffix"].([]any)[0] == ".ru" && m["network"] != nil && m["network"].([]any)[0] == "tcp" {
+		if m["domain_suffix"] != nil && m["domain_suffix"].([]any)[0] == "ru" && m["network"] != nil && m["network"].([]any)[0] == "tcp" {
 			if m["outbound"] != "bal" {
 				t.Fatalf("rule outbound: %v", m)
 			}
@@ -480,4 +480,80 @@ func TestPhysNodeHost(t *testing.T) {
 	if p.Host() != "no-port" {
 		t.Fatalf("host fallback: %q", p.Host())
 	}
+}
+
+// TestLegacyRouteRuleConversion — проверяет конвертацию legacy-формата в sing-box 1.14+.
+func TestLegacyRouteRuleConversion(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []RouteRuleItem
+	}{
+		{
+			name:  "geoip-ru и geosite-ads legacy",
+			input: `[{"name":"ru-direct","action":"route","outbounds":["direct"],"domain_suffix":[".ru"],"ip_cidr":["geoip:ru"],"final":true}]`,
+			expected: []RouteRuleItem{
+				{Name: "ru-direct", Action: "route", Outbound: "direct", DomainSuffix: []string{"ru"}, RuleSet: []string{"geoip-ru"}},
+			},
+		},
+		{
+			name:  "block → reject, geosite: → rule_set",
+			input: `[{"name":"ads-blocker","action":"block","domain":["geosite:category-ads"]}]`,
+			expected: []RouteRuleItem{
+				{Name: "ads-blocker", Action: "reject", RuleSet: []string{"category-ads"}},
+			},
+		},
+		{
+			name:  "geoip:private → ip_is_private",
+			input: `[{"name":"private-ip","action":"block","ip_cidr":["geoip:private"]}]`,
+			expected: []RouteRuleItem{
+				{Name: "private-ip", Action: "reject", IPIsPrivate: true},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items, err := ParseRouteRuleItems([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("ParseRouteRuleItems error: %v", err)
+			}
+			if len(items) != len(tt.expected) {
+				t.Fatalf("want %d items, got %d", len(tt.expected), len(items))
+			}
+			for i := range items {
+				got := items[i]
+				exp := tt.expected[i]
+				if got.Name != exp.Name {
+					t.Errorf("item %d name: got %q, want %q", i, got.Name, exp.Name)
+				}
+				if got.Action != exp.Action {
+					t.Errorf("item %d action: got %q, want %q", i, got.Action, exp.Action)
+				}
+				if got.Outbound != exp.Outbound {
+					t.Errorf("item %d outbound: got %q, want %q", i, got.Outbound, exp.Outbound)
+				}
+				if got.IPIsPrivate != exp.IPIsPrivate {
+					t.Errorf("item %d ip_is_private: got %v, want %v", i, got.IPIsPrivate, exp.IPIsPrivate)
+				}
+				if len(got.RuleSet) != len(exp.RuleSet) {
+					t.Errorf("item %d rule_set: got %v, want %v", i, got.RuleSet, exp.RuleSet)
+				}
+				if !equalStringSlices(got.RuleSet, exp.RuleSet) {
+					t.Errorf("item %d rule_set mismatch: got %v, want %v", i, got.RuleSet, exp.RuleSet)
+				}
+			}
+		})
+	}
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

@@ -426,8 +426,8 @@ func (h *Handler) buildInboundRouteRules(graphID string) (graph.InboundRouteRule
 				// Пропускаем несуществующие правила, но логируем
 				continue
 			}
-			var ruleItems []graph.RouteRuleItem
-			if err := json.Unmarshal([]byte(rule.RulesJSON), &ruleItems); err != nil {
+			ruleItems, err := graph.ParseRouteRuleItems([]byte(rule.RulesJSON))
+			if err != nil {
 				continue
 			}
 			items = append(items, ruleItems...)

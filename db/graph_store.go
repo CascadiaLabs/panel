@@ -116,6 +116,9 @@ func (s *Store) SaveGraphState(graphID string, state graph.State) error {
 	if _, err := tx.Exec(`DELETE FROM graph_edges WHERE graph_id = ?`, graphID); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM graph_nodes WHERE graph_id = ?`, graphID); err != nil {
+		return err
+	}
 
 	now := time.Now().Unix()
 	for _, n := range state.Nodes {

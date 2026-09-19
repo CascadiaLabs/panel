@@ -217,7 +217,7 @@ func TestValidateRuleChainOK(t *testing.T) {
 	// in-b分流: правило .ru → direct, остальное → out-b
 	st.Nodes = append(st.Nodes,
 		Node{ID: "rule-b", NodeID: "nodeB", Kind: KindRule, Protocol: "match", Tag: "rule-b",
-			Settings: mustJSON(t, RuleSettings{DomainSuffix: []string{".ru"}})},
+			Settings: mustJSON(t, RuleSettings{DomainSuffix: []string{"ru"}})},
 		Node{ID: "out-b2", NodeID: "nodeB", Kind: KindOutbound, Protocol: "direct", Tag: "out-b2"},
 	)
 	st.Edges = append(st.Edges,

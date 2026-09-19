@@ -55,7 +55,18 @@ func TestGenerateShorthandCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := decodeConfig(t, configs["A"])
-	rule := a["route"].(map[string]any)["rules"].([]any)[0].(map[string]any)
+	// Находим правило с relay outbound (не cascadia-direct и не dns)
+	var rule map[string]any
+	for _, r := range a["route"].(map[string]any)["rules"].([]any) {
+		m := r.(map[string]any)
+		if ob, ok := m["outbound"].(string); ok && ob != "cascadia-direct" && ob != "" && !strings.HasPrefix(ob, "dns-") {
+			rule = m
+			break
+		}
+	}
+	if rule == nil {
+		t.Fatal("no rule with outbound found")
+	}
 	relay := configOutbound(t, a, rule["outbound"].(string))
 	if relay["type"] != "trojan" || relay["server"] != "target.example" || relay["server_port"] != float64(8443) || relay["password"] != "relay-secret" {
 		t.Fatalf("relay did not mirror target: %v", relay)
@@ -64,7 +75,18 @@ func TestGenerateShorthandCascade(t *testing.T) {
 		t.Fatalf("missing target TLS/transport: %v", relay)
 	}
 	b := decodeConfig(t, configs["B"])
-	exitRule := b["route"].(map[string]any)["rules"].([]any)[0].(map[string]any)
+	// Находим правило с inbound для ноды b (exit route), пропуская системные правила
+	var exitRule map[string]any
+	for _, r := range b["route"].(map[string]any)["rules"].([]any) {
+		m := r.(map[string]any)
+		if ib, ok := m["inbound"].([]any); ok && len(ib) > 0 && ib[0] == "b" {
+			exitRule = m
+			break
+		}
+	}
+	if exitRule == nil {
+		t.Fatal("no exit rule for node b found")
+	}
 	if exitRule["inbound"].([]any)[0] != "b" || configOutbound(t, b, exitRule["outbound"].(string))["type"] != "direct" {
 		t.Fatalf("missing explicit Internet route: %v", exitRule)
 	}
@@ -180,7 +202,7 @@ func TestGenerateBalancerToInboundSameNode(t *testing.T) {
 	var localRule map[string]any
 	for _, raw := range rules {
 		rule := raw.(map[string]any)
-		if rule["inbound"].([]any)[0] == "local" {
+		if ib, ok := rule["inbound"].([]any); ok && len(ib) > 0 && ib[0] == "local" {
 			localRule = rule
 			break
 		}
@@ -258,8 +280,29 @@ func TestInboundExitWithSpecificRule(t *testing.T) {
 	}
 	a := decodeConfig(t, configs["A"])
 	rules := a["route"].(map[string]any)["rules"].([]any)
-	if len(rules) != 2 || rules[0].(map[string]any)["domain"] == nil || rules[0].(map[string]any)["outbound"] != "out" || configOutbound(t, a, rules[1].(map[string]any)["outbound"].(string))["type"] != "direct" {
+	// Находим правило с domain (graph rule), пропуская системные
+	var domainRule map[string]any
+	for _, r := range rules {
+		m := r.(map[string]any)
+		if m["domain"] != nil {
+			domainRule = m
+			break
+		}
+	}
+	if domainRule == nil || domainRule["outbound"] != "out" {
 		t.Fatalf("specific route must precede Internet default: %v", rules)
+	}
+	// Находим catch-all rule (inbound + outbound, без domain/domain_suffix/rule_set/ip_is_private)
+	var catchAllRule map[string]any
+	for _, r := range rules {
+		m := r.(map[string]any)
+		if m["domain"] == nil && m["domain_suffix"] == nil && m["rule_set"] == nil && m["ip_is_private"] == nil && m["inbound"] != nil {
+			catchAllRule = m
+			break
+		}
+	}
+	if catchAllRule == nil || catchAllRule["outbound"] != "cascadia-direct" {
+		t.Fatalf("specific route must have direct outbound: %v", rules)
 	}
 }
 
@@ -271,14 +314,22 @@ func TestInternalTagsAvoidCollisions(t *testing.T) {
 		Node{ID: internal.ID, Tag: internal.Tag, NodeID: "A", Kind: KindOutbound, Protocol: "direct"},
 		Node{ID: "reserved", Tag: DefaultDirectTag, NodeID: "B", Kind: KindRule, Protocol: "match", Settings: mustJSON(t, RuleSettings{Domain: []string{"example.org"}})},
 		Node{ID: "exit", Tag: "existing-direct", NodeID: "B", Kind: KindOutbound, Protocol: "direct"})
-	st.Edges = append(st.Edges, Edge{SourceID: "reserved", TargetID: "exit"})
+	st.Edges = append(st.Edges, Edge{SourceID: "b", TargetID: "reserved"}, Edge{SourceID: "reserved", TargetID: "exit"})
 	configs, err := Generate(st, phys, InboundRouteRules{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := decodeConfig(t, configs["A"])
-	route := a["route"].(map[string]any)["rules"].([]any)[0].(map[string]any)
-	if route["outbound"] == internal.Tag || configOutbound(t, a, route["outbound"].(string))["type"] != "trojan" {
+	// Проверяем collision на ноде B, где находится reserved rule
+	b := decodeConfig(t, configs["B"])
+	var route map[string]any
+	for _, r := range b["route"].(map[string]any)["rules"].([]any) {
+		m := r.(map[string]any)
+		if m["domain"] != nil {
+			route = m
+			break
+		}
+	}
+	if route == nil || route["outbound"] == internal.Tag || configOutbound(t, b, route["outbound"].(string))["type"] != "direct" {
 		t.Fatalf("internal relay collision: %v", route)
 	}
 	// Force an automatic direct next to a user-owned non-direct reserved tag.
@@ -288,7 +339,7 @@ func TestInternalTagsAvoidCollisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a = decodeConfig(t, configs["A"])
+	a := decodeConfig(t, configs["A"])
 	final := a["route"].(map[string]any)["final"].(string)
 	if final == DefaultDirectTag || configOutbound(t, a, final)["type"] != "direct" {
 		t.Fatalf("automatic direct collision: %v", a)
@@ -308,7 +359,7 @@ func TestRuleToInboundShorthand(t *testing.T) {
 	st, phys := shorthandCascade(t)
 	st.Nodes = append(st.Nodes,
 		Node{ID: "r", NodeID: "A", Kind: KindRule, Protocol: "match", Tag: "ru-rule",
-			Settings: mustJSON(t, RuleSettings{DomainSuffix: []string{".ru"}})},
+			Settings: mustJSON(t, RuleSettings{DomainSuffix: []string{"ru"}})},
 		Node{ID: "od", NodeID: "A", Kind: KindOutbound, Protocol: "direct", Tag: "direct-out"},
 	)
 	st.Edges = []Edge{
@@ -331,14 +382,16 @@ func TestRuleToInboundShorthand(t *testing.T) {
 		r := raw.(map[string]any)
 		if r["domain_suffix"] != nil {
 			ruRule = r
-		} else {
+		}
+		// Default rule: catch-all с inbound + outbound, без domain/domain_suffix/rule_set/ip_is_private
+		if r["domain"] == nil && r["domain_suffix"] == nil && r["rule_set"] == nil && r["ip_is_private"] == nil && r["inbound"] != nil && r["outbound"] != nil {
 			defaultRule = r
 		}
 	}
 	if ruRule == nil || defaultRule == nil {
 		t.Fatalf("want .ru rule + default rule, got: %v", rules)
 	}
-	if ruRule["domain_suffix"].([]any)[0] != ".ru" {
+	if ruRule["domain_suffix"].([]any)[0] != "ru" {
 		t.Fatalf("match fields lost: %v", ruRule)
 	}
 	if defaultRule["outbound"] != "direct-out" {
@@ -354,7 +407,7 @@ func TestRuleToInboundShorthand(t *testing.T) {
 func TestRuleToInboundSameNodeRejected(t *testing.T) {
 	st, phys := shorthandCascade(t)
 	st.Nodes = append(st.Nodes, Node{ID: "r", NodeID: "A", Kind: KindRule, Protocol: "match", Tag: "r",
-		Settings: mustJSON(t, RuleSettings{DomainSuffix: []string{".ru"}})})
+		Settings: mustJSON(t, RuleSettings{DomainSuffix: []string{"ru"}})})
 	st.Edges = []Edge{
 		{SourceID: "a", TargetID: "r"},
 		{SourceID: "r", TargetID: "in-a-same"}, // цель на той же ноде A

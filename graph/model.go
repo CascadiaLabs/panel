@@ -19,6 +19,7 @@ package graph
 import (
 	"encoding/json"
 	"net"
+	"strings"
 )
 
 // Kind — тип элемента графа.
@@ -203,6 +204,10 @@ type RuleSettings struct {
 	IPCIDR        []string `json:"ip_cidr,omitempty"`
 	Port          []uint16 `json:"port,omitempty"`
 	Invert        bool     `json:"invert,omitempty"`
+	// sing-box 1.14 fields
+	RuleSet     []string `json:"rule_set,omitempty"`
+	IPIsPrivate bool     `json:"ip_is_private,omitempty"`
+	ClashMode   string   `json:"clash_mode,omitempty"`
 }
 
 func ParseInboundSettings(raw json.RawMessage) (InboundSettings, error) {
@@ -239,4 +244,97 @@ func ParseRuleSettings(raw json.RawMessage) (RuleSettings, error) {
 	}
 	err := json.Unmarshal(raw, &s)
 	return s, err
+}
+
+// LegacyRouteRuleItem — устаревшая структура для чтения старых записей из БД.
+// Поля Outbounds, Final, ip_cidr с geoip:/geosite: — legacy формат sing-box < 1.12.
+type LegacyRouteRuleItem struct {
+	Name          string   `json:"name"`
+	Action        string   `json:"action"`
+	Outbounds     []string `json:"outbounds,omitempty"`
+	Domain        []string `json:"domain,omitempty"`
+	DomainSuffix  []string `json:"domain_suffix,omitempty"`
+	DomainKeyword []string `json:"domain_keyword,omitempty"`
+	DomainRegex   []string `json:"domain_regex,omitempty"`
+	IPCIDR        []string `json:"ip_cidr,omitempty"`
+	SourceIPCIDR  []string `json:"source_ip_cidr,omitempty"`
+	Port          []string `json:"port,omitempty"`
+	SourcePort    []string `json:"source_port,omitempty"`
+	Network       []string `json:"network,omitempty"`
+	Protocol      []string `json:"protocol,omitempty"`
+	Process       []string `json:"process,omitempty"`
+	ProcessPath   []string `json:"process_path,omitempty"`
+	PackageName   []string `json:"package_name,omitempty"`
+	UID           []string `json:"uid,omitempty"`
+	GID           []string `json:"gid,omitempty"`
+	NetworkType   []string `json:"network_type,omitempty"`
+	Inbound       []string `json:"inbound,omitempty"`
+	Final         bool     `json:"final,omitempty"`
+}
+
+// ConvertToRouteRuleItem конвертирует legacy RouteRuleItem в новую модель sing-box 1.14+.
+// Обрабатывает: block→reject, geoip:→rule_set/ip_is_private, geosite:→rule_set, outbounds[]→outbound.
+func (l LegacyRouteRuleItem) ConvertToRouteRuleItem() RouteRuleItem {
+	r := RouteRuleItem{
+		Name:   l.Name,
+		Action: l.Action,
+	}
+	if l.Action == "block" {
+		r.Action = "reject"
+	}
+	if len(l.Outbounds) > 0 {
+		r.Outbound = l.Outbounds[0]
+	}
+	// Конвертация ip_cidr: geoip:xx → rule_set, geoip:private → ip_is_private
+	for _, cidr := range l.IPCIDR {
+		switch cidr {
+		case "geoip:private":
+			r.IPIsPrivate = true
+		default:
+			if strings.HasPrefix(cidr, "geoip:") {
+				r.RuleSet = append(r.RuleSet, "geoip-"+strings.TrimPrefix(cidr, "geoip:"))
+			}
+		}
+	}
+	// Конвертация domain: geosite:xx → rule_set
+	for _, dom := range l.Domain {
+		if strings.HasPrefix(dom, "geosite:") {
+			r.RuleSet = append(r.RuleSet, strings.TrimPrefix(dom, "geosite:"))
+		}
+	}
+	// Копируем остальные поля как есть
+	r.Domain = l.Domain
+	r.DomainSuffix = l.DomainSuffix
+	r.DomainKeyword = l.DomainKeyword
+	r.DomainRegex = l.DomainRegex
+	r.SourceIPCIDR = l.SourceIPCIDR
+	r.Port = l.Port
+	r.SourcePort = l.SourcePort
+	r.Network = l.Network
+	r.Protocol = l.Protocol
+	r.Process = l.Process
+	r.ProcessPath = l.ProcessPath
+	r.PackageName = l.PackageName
+	r.UID = l.UID
+	r.GID = l.GID
+	r.NetworkType = l.NetworkType
+	r.Inbound = l.Inbound
+	return r
+}
+
+// ParseRouteRuleItems парсит JSON массив из rules_json, поддерживая оба формата:
+// legacy (Outbounds, Final, geoip:/geosite:) и новый (Outbound, RuleSet, IPIsPrivate).
+func ParseRouteRuleItems(data []byte) ([]RouteRuleItem, error) {
+	var result []RouteRuleItem
+	// Сначала попробуем legacy формат
+	var legacy []LegacyRouteRuleItem
+	if err := json.Unmarshal(data, &legacy); err == nil && len(legacy) > 0 {
+		for _, l := range legacy {
+			result = append(result, l.ConvertToRouteRuleItem())
+		}
+		return result, nil
+	}
+	// Fallback: новый формат
+	err := json.Unmarshal(data, &result)
+	return result, err
 }

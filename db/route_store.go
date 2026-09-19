@@ -20,63 +20,62 @@ type RouteRule struct {
 
 // RouteRuleItem — отдельное правило внутри массива rules_json.
 type RouteRuleItem struct {
-	Name           string   `json:"name"`
-	Action         string   `json:"action"`
-	Outbounds      []string `json:"outbounds,omitempty"`
-	Domain         []string `json:"domain,omitempty"`
-	DomainSuffix   []string `json:"domain_suffix,omitempty"`
-	DomainKeyword  []string `json:"domain_keyword,omitempty"`
-	DomainRegex    []string `json:"domain_regex,omitempty"`
-	IPCIDR         []string `json:"ip_cidr,omitempty"`
-	SourceIPCIDR   []string `json:"source_ip_cidr,omitempty"`
-	Port           []string `json:"port,omitempty"`
-	SourcePort     []string `json:"source_port,omitempty"`
-	Network        []string `json:"network,omitempty"`
-	Protocol       []string `json:"protocol,omitempty"`
-	Process        []string `json:"process,omitempty"`
-	ProcessPath    []string `json:"process_path,omitempty"`
-	PackageName    []string `json:"package_name,omitempty"`
-	UID            []string `json:"uid,omitempty"`
-	GID            []string `json:"gid,omitempty"`
-	NetworkType    []string `json:"network_type,omitempty"`
-	Inbound        []string `json:"inbound,omitempty"`
-	Final          bool     `json:"final,omitempty"`
+	Name          string   `json:"name"`
+	Action        string   `json:"action"`
+	Outbound      string   `json:"outbound,omitempty"`
+	Domain        []string `json:"domain,omitempty"`
+	DomainSuffix  []string `json:"domain_suffix,omitempty"`
+	DomainKeyword []string `json:"domain_keyword,omitempty"`
+	DomainRegex   []string `json:"domain_regex,omitempty"`
+	IPCIDR        []string `json:"ip_cidr,omitempty"`
+	SourceIPCIDR  []string `json:"source_ip_cidr,omitempty"`
+	Port          []string `json:"port,omitempty"`
+	SourcePort    []string `json:"source_port,omitempty"`
+	Network       []string `json:"network,omitempty"`
+	Protocol      []string `json:"protocol,omitempty"`
+	Process       []string `json:"process,omitempty"`
+	ProcessPath   []string `json:"process_path,omitempty"`
+	PackageName   []string `json:"package_name,omitempty"`
+	UID           []string `json:"uid,omitempty"`
+	GID           []string `json:"gid,omitempty"`
+	NetworkType   []string `json:"network_type,omitempty"`
+	Inbound       []string `json:"inbound,omitempty"`
+	// sing-box 1.14 fields
+	RuleSet     []string `json:"rule_set,omitempty"`
+	IPIsPrivate bool     `json:"ip_is_private,omitempty"`
+	ClashMode   string   `json:"clash_mode,omitempty"`
 }
 
 // DefaultRouteRules возвращает список дефолтных правил маршрутизации.
 func DefaultRouteRules() []RouteRuleItem {
 	return []RouteRuleItem{
 		{
-			Name:          "ru-direct",
-			Action:        "route",
-			Outbounds:     []string{"direct"},
-			DomainSuffix:  []string{".ru", ".su", ".xn--p1ai"},
-			IPCIDR:        []string{"geoip:ru"},
-			Final:         true,
+			Name:        "ru-direct",
+			Action:      "route",
+			Outbound:    "direct",
+			DomainSuffix: []string{"ru", "su", "xn--p1ai"},
+			RuleSet:     []string{"geoip-ru"},
 		},
 		{
-			Name:      "ads-blocker",
-			Action:    "block",
-			Domain:    []string{"geosite:category-ads", "geosite:category-ads-plus"},
-			Final:     true,
+			Name:    "ads-blocker",
+			Action:  "reject",
+			RuleSet: []string{"geosite-category-ads-all"},
 		},
 		{
-			Name:      "private-ip",
-			Action:    "block",
-			IPCIDR:    []string{"geoip:private"},
-			Final:     true,
+			Name:       "private-ip",
+			Action:     "reject",
+			IPIsPrivate: true,
 		},
 		{
-			Name:      "global-route",
-			Action:    "route",
-			Outbounds: []string{"proxy"},
-			Final:     false,
+			Name:     "global-route",
+			Action:   "route",
+			Outbound: "proxy",
 		},
 	}
 }
 
 // EnsureGlobalDefaultRouteRules создаёт глобальные дефолтные правила маршрутизации,
-// если их ещё нет. Глобальные правила имеют graph_id = '' и доступны для всех графов.
+// если их ещё нет. Глобальные правила имеют graph_id = ” и доступны для всех графов.
 func (s *Store) EnsureGlobalDefaultRouteRules() error {
 	// Проверяем, существуют ли уже глобальные дефолтные правила
 	var count int
@@ -124,7 +123,7 @@ func (s *Store) ListRouteRules(graphID string) ([]RouteRule, error) {
 	var rows *sql.Rows
 	var err error
 	if graphID == "" {
-		rows, err = s.db.Query(`SELECT `+routeRuleCols+` FROM route_rules ORDER BY is_default DESC, name`)
+		rows, err = s.db.Query(`SELECT ` + routeRuleCols + ` FROM route_rules ORDER BY is_default DESC, name`)
 	} else {
 		// Получаем правила графа + глобальные дефолтные
 		rows, err = s.db.Query(`SELECT `+routeRuleCols+` FROM route_rules 

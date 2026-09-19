@@ -9,27 +9,30 @@ import (
 
 // RouteRuleItem — правило маршрутизации sing-box (соответствует db.RouteRuleItem).
 type RouteRuleItem struct {
-	Name           string   `json:"name"`
-	Action         string   `json:"action"`
-	Outbounds      []string `json:"outbounds,omitempty"`
-	Domain         []string `json:"domain,omitempty"`
-	DomainSuffix   []string `json:"domain_suffix,omitempty"`
-	DomainKeyword  []string `json:"domain_keyword,omitempty"`
-	DomainRegex    []string `json:"domain_regex,omitempty"`
-	IPCIDR         []string `json:"ip_cidr,omitempty"`
-	SourceIPCIDR   []string `json:"source_ip_cidr,omitempty"`
-	Port           []string `json:"port,omitempty"`
-	SourcePort     []string `json:"source_port,omitempty"`
-	Network        []string `json:"network,omitempty"`
-	Protocol       []string `json:"protocol,omitempty"`
-	Process        []string `json:"process,omitempty"`
-	ProcessPath    []string `json:"process_path,omitempty"`
-	PackageName    []string `json:"package_name,omitempty"`
-	UID            []string `json:"uid,omitempty"`
-	GID            []string `json:"gid,omitempty"`
-	NetworkType    []string `json:"network_type,omitempty"`
-	Inbound        []string `json:"inbound,omitempty"`
-	Final          bool     `json:"final,omitempty"`
+	Name          string   `json:"name"`
+	Action        string   `json:"action"`
+	Outbound      string   `json:"outbound,omitempty"`
+	Domain        []string `json:"domain,omitempty"`
+	DomainSuffix  []string `json:"domain_suffix,omitempty"`
+	DomainKeyword []string `json:"domain_keyword,omitempty"`
+	DomainRegex   []string `json:"domain_regex,omitempty"`
+	IPCIDR        []string `json:"ip_cidr,omitempty"`
+	SourceIPCIDR  []string `json:"source_ip_cidr,omitempty"`
+	Port          []string `json:"port,omitempty"`
+	SourcePort    []string `json:"source_port,omitempty"`
+	Network       []string `json:"network,omitempty"`
+	Protocol      []string `json:"protocol,omitempty"`
+	Process       []string `json:"process,omitempty"`
+	ProcessPath   []string `json:"process_path,omitempty"`
+	PackageName   []string `json:"package_name,omitempty"`
+	UID           []string `json:"uid,omitempty"`
+	GID           []string `json:"gid,omitempty"`
+	NetworkType   []string `json:"network_type,omitempty"`
+	Inbound       []string `json:"inbound,omitempty"`
+	// sing-box 1.14 fields
+	RuleSet     []string `json:"rule_set,omitempty"`
+	IPIsPrivate bool     `json:"ip_is_private,omitempty"`
+	ClashMode   string   `json:"clash_mode,omitempty"`
 }
 
 // InboundRouteRules — правила маршрутизации, назначенные на inbound'ы.
@@ -423,8 +426,8 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 			if item.Action != "" {
 				rule["action"] = item.Action
 			}
-			if len(item.Outbounds) > 0 {
-				rule["outbound"] = item.Outbounds
+			if item.Outbound != "" {
+				rule["outbound"] = item.Outbound
 			}
 			if len(item.Domain) > 0 {
 				rule["domain"] = item.Domain
@@ -438,8 +441,17 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 			if len(item.DomainRegex) > 0 {
 				rule["domain_regex"] = item.DomainRegex
 			}
+			if len(item.RuleSet) > 0 {
+				rule["rule_set"] = item.RuleSet
+			}
 			if len(item.IPCIDR) > 0 {
 				rule["ip_cidr"] = item.IPCIDR
+			}
+			if item.IPIsPrivate {
+				rule["ip_is_private"] = true
+			}
+			if item.ClashMode != "" {
+				rule["clash_mode"] = item.ClashMode
 			}
 			if len(item.SourceIPCIDR) > 0 {
 				rule["source_ip_cidr"] = item.SourceIPCIDR
@@ -477,9 +489,6 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 			if len(item.Inbound) > 0 {
 				rule["inbound"] = item.Inbound
 			}
-			if item.Final {
-				rule["final"] = true
-			}
 			rules = append(rules, rule)
 		}
 	}
@@ -487,17 +496,13 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 	// --- сортировка правил маршрутизации ---
 	// Принцип: конкретные правила (с условиями domain/ip/port) ДО catch-all правил.
 	// Внутри групп сохраняем исходный порядок (stable sort).
+	// В sing-box 1.14 порядок определяется наличием условий (ruleHasMatchConditions) —
+	// catch-all правила автоматически оказываются внизу.
 	sort.SliceStable(rules, func(i, j int) bool {
 		hasMatchI := ruleHasMatchConditions(rules[i])
 		hasMatchJ := ruleHasMatchConditions(rules[j])
 		if hasMatchI != hasMatchJ {
 			return hasMatchI // правила с условиями идут раньше
-		}
-		// Если обе имеют условия или обе catch-all: final=true раньше
-		finalI := getBool(rules[i], "final")
-		finalJ := getBool(rules[j], "final")
-		if finalI != finalJ {
-			return finalI
 		}
 		return false // сохраняем исходный порядок
 	})
@@ -539,7 +544,11 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 	}
 	// Объявления удалённых rule-set'ов (.srs), на которые ссылаются системные правила.
 	route["rule_set"] = buildRuleSets(directTag)
+	// default_domain_resolver обязателен при использовании resolve action.
+	route["default_domain_resolver"] = "dns-bootstrap"
 	cfg["route"] = route
+	// http_clients — замена устаревшего download_detour в sing-box 1.14.
+	cfg["http_clients"] = buildHTTPClients(directTag)
 
 	// --- DNS configuration with split DNS for .ru domains ---
 	cfg["dns"] = buildDNSConfig(outbounds, directTag)
@@ -550,9 +559,9 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 // Теги rule-set'ов, на которые ссылаются системные правила.
 // Каждый тег ОБЯЗАН быть объявлен в route.rule_set, иначе sing-box не пройдёт валидацию.
 const (
-	RuleSetGeositeRU   = "geosite-category-ru"
-	RuleSetGeoIPRU     = "geoip-ru"
-	RuleSetGeositeAds  = "geosite-category-ads-all"
+	RuleSetGeositeRU  = "geosite-category-ru"
+	RuleSetGeoIPRU    = "geoip-ru"
+	RuleSetGeositeAds = "geosite-category-ads-all"
 )
 
 // buildSystemRouteRules создаёт системные правила маршрутизации sing-box
@@ -590,7 +599,7 @@ func buildSystemRouteRules(directTag string) []map[string]any {
 	// 4. Доменные суффиксы RU — самое предсказуемое правило, идёт первым из RU-группы.
 	rules = append(rules, map[string]any{
 		"action":        "route",
-		"domain_suffix": []string{".ru", ".su", ".xn--p1ai"},
+		"domain_suffix": []string{"ru", "su", "xn--p1ai"},
 		"outbound":      directTag,
 	})
 
@@ -631,10 +640,7 @@ func buildRuleSets(directTag string) []map[string]any {
 			"format":          "binary",
 			"url":             url,
 			"update_interval": "7d",
-		}
-		// Скачиваем rule-set напрямую: прокси может быть ещё не поднят.
-		if directTag != "" {
-			m["download_detour"] = directTag
+			"http_client":     directTag + "-http-client",
 		}
 		return m
 	}
@@ -642,6 +648,17 @@ func buildRuleSets(directTag string) []map[string]any {
 		srs(RuleSetGeositeRU, "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs"),
 		srs(RuleSetGeoIPRU, "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs"),
 		srs(RuleSetGeositeAds, "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"),
+	}
+}
+
+// buildHTTPClients создаёт верхнеуровневую секцию http_clients конфига sing-box 1.14.
+// download_detour устарел в 1.14.0; http_client — замена.
+func buildHTTPClients(directTag string) []map[string]any {
+	return []map[string]any{
+		{
+			"tag":  directTag + "-http-client",
+			"dial": map[string]any{"detour": directTag},
+		},
 	}
 }
 
@@ -663,19 +680,26 @@ func buildDNSConfig(outbounds []map[string]any, directTag string) map[string]any
 
 	servers := []map[string]any{
 		{
-			"tag":        "dns-bootstrap",
-			"address":    "local",
-			"detour":     directTag,
+			"type":   "local",
+			"tag":    "dns-bootstrap",
+			"detour": directTag,
 		},
 		{
-			"tag":        "dns-direct",
-			"address":    "local",
-			"detour":     directTag,
+			"type":   "local",
+			"tag":    "dns-direct",
+			"detour": directTag,
 		},
 		{
-			"tag":        "dns-remote",
-			"address":    "https://1.1.1.1/dns-query",
-			"detour":     proxyTag,
+			"type":        "https",
+			"tag":         "dns-remote",
+			"server":      "1.1.1.1",
+			"server_port": 443,
+			"path":        "/dns-query",
+			"tls": map[string]any{
+				"enabled":     true,
+				"server_name": "cloudflare-dns.com",
+			},
+			"detour": proxyTag,
 		},
 	}
 
@@ -683,7 +707,7 @@ func buildDNSConfig(outbounds []map[string]any, directTag string) map[string]any
 		// .ru суффиксы → прямой DNS (самое предсказуемое правило — идёт первым)
 		{
 			"action":        "route",
-			"domain_suffix": []string{".ru", ".su", ".xn--p1ai"},
+			"domain_suffix": []string{"ru", "su", "xn--p1ai"},
 			"server":        "dns-direct",
 		},
 		// RU geosite (.srs rule-set) → прямой DNS
@@ -695,22 +719,23 @@ func buildDNSConfig(outbounds []map[string]any, directTag string) map[string]any
 		// Clash Direct mode -> direct DNS
 		{
 			"action":     "route",
-			"clash_mode": "Direct",
+			"clash_mode": "direct",
 			"server":     "dns-direct",
 		},
 		// Clash Global mode -> remote DNS
 		{
 			"action":     "route",
-			"clash_mode": "Global",
+			"clash_mode": "global",
 			"server":     "dns-remote",
 		},
 	}
 
 	return map[string]any{
-		"servers": servers,
-		"rules":   rules,
-		"default": "dns-bootstrap",
-		"final":   "dns-remote",
+		"servers":                servers,
+		"rules":                  rules,
+		"default":                "dns-bootstrap",
+		"final":                  "dns-remote",
+		"default_domain_resolver": "dns-bootstrap",
 	}
 }
 
@@ -970,8 +995,17 @@ func applyRuleMatch(rule map[string]any, rs RuleSettings) {
 	if len(rs.DomainKeyword) > 0 {
 		rule["domain_keyword"] = rs.DomainKeyword
 	}
+	if len(rs.RuleSet) > 0 {
+		rule["rule_set"] = rs.RuleSet
+	}
 	if len(rs.IPCIDR) > 0 {
 		rule["ip_cidr"] = rs.IPCIDR
+	}
+	if rs.IPIsPrivate {
+		rule["ip_is_private"] = true
+	}
+	if rs.ClashMode != "" {
+		rule["clash_mode"] = rs.ClashMode
 	}
 	if len(rs.Port) > 0 {
 		rule["port"] = rs.Port
