@@ -247,13 +247,12 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 		"default":   serverTags[0],
 	})
 
-	// Direct и block
+	// Direct (без block — legacy special outbound, не используется)
 	outbounds = append(outbounds,
 		map[string]any{"type": "direct", "tag": "direct"},
-		map[string]any{"type": "block", "tag": "block"},
 	)
 
-	// DNS
+	// DNS (sing-box 1.14+ формат)
 	dns := map[string]any{
 		"servers": []map[string]any{
 			{
@@ -282,56 +281,64 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 			},
 		},
 		"rules": []map[string]any{
-			{"action": "resolve", "server": "dns-direct"},
-			{"action": "resolve", "clash_mode": "Direct", "server": "dns-direct"},
-			{"action": "resolve", "clash_mode": "Global", "server": "dns-remote"},
+			{"action": "route", "clash_mode": "Direct", "server": "dns-direct"},
+			{"action": "route", "clash_mode": "Global", "server": "dns-remote"},
 		},
+		"final": "dns-direct",
 	}
 
-	// Route rules (общие для клиента)
+	// Route rules (современный формат sing-box 1.14+ с action: "route")
 	routeRules := []map[string]any{
 		{"action": "sniff"},
 		{"protocol": "dns", "action": "hijack-dns"},
-		{"clash_mode": "Direct", "outbound": "direct"},
-		{"clash_mode": "Global", "outbound": "proxy-group"},
-		{"ip_is_private": true, "outbound": "direct"},
+		{"action": "resolve"},
+		{"action": "route", "clash_mode": "Direct", "outbound": "direct"},
+		{"action": "route", "clash_mode": "Global", "outbound": "proxy-group"},
+		{"action": "route", "ip_is_private": true, "outbound": "direct"},
 	}
 
 	// Russian domain rules
 	routeRules = append(routeRules, map[string]any{
+		"action":      "route",
+		"outbound":    "direct",
 		"domain_suffix": []string{
 			".ru", ".su", ".xn--p1ai", "vk.com", "yandex.ru",
 			"gosuslugi.ru", "sberbank.ru",
 		},
-		"outbound": "direct",
 	})
 
-	// Sing-box geoip/geosite rule sets
+	// Sing-box geoip/geosite rule sets (актуальные теги)
 	routeRules = append(routeRules, map[string]any{
-		"rule_set": []string{"geosite-ru", "geoip-ru"},
-		"outbound": "direct",
+		"action":     "route",
+		"outbound":   "direct",
+		"rule_set":   []string{"geosite-category-ru", "geoip-ru"},
 	})
 
 	route := map[string]any{
 		"rule_set": []map[string]any{
 			{
-				"tag":           "geosite-ru",
-				"type":          "remote",
-				"format":        "binary",
-				"url":           "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-ru.srs",
-				"download_detour": "direct",
+				"tag":      "geosite-category-ru",
+				"type":     "remote",
+				"format":   "binary",
+				"url":      "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs",
+				"http_client": map[string]any{
+					"detour": "direct",
+				},
 			},
 			{
-				"tag":           "geoip-ru",
-				"type":          "remote",
-				"format":        "binary",
-				"url":           "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs",
-				"download_detour": "direct",
+				"tag":      "geoip-ru",
+				"type":     "remote",
+				"format":   "binary",
+				"url":      "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs",
+				"http_client": map[string]any{
+					"detour": "direct",
+				},
 			},
 		},
-		"rules":             routeRules,
-		"final":             "proxy-group",
-		"auto_detect_interface": true,
+		"rules":                  routeRules,
+		"final":                  "proxy-group",
+		"auto_detect_interface":  true,
+		"default_domain_resolver": "dns-direct",
 	}
 
 	// Клиентский inbound: TUN (sing-box 1.14+ формат)
