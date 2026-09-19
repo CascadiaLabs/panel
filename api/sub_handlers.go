@@ -337,13 +337,11 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 	// Клиентский inbound: TUN (sing-box 1.14+ формат)
 	inbounds := []map[string]any{
 		{
-			"type":           "tun",
-			"tag":            "tun-in",
-			"inet4_address":  []string{"172.19.0.1/30"},
-			"inet6_address":  []string{"fdfe:dcba:9876::1/126"},
-			"auto_route":     true,
-			"strict_route":   true,
-			"sniff":          true,
+			"type":          "tun",
+			"tag":           "tun-in",
+			"address":       []string{"172.19.0.1/30", "fdfe:dcba:9876::1/126"},
+			"auto_route":    true,
+			"strict_route":  true,
 		},
 	}
 
