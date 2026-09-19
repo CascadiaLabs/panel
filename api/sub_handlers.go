@@ -257,14 +257,28 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 	dns := map[string]any{
 		"servers": []map[string]any{
 			{
-				"tag":      "dns-remote",
-				"address":  "https://1.1.1.1/dns-query",
-				"detour":   "proxy-group",
+				"type":       "https",
+				"tag":        "dns-remote",
+				"server":     "1.1.1.1",
+				"server_port": 443,
+				"path":       "/dns-query",
+				"detour":     "proxy-group",
+				"tls": map[string]any{
+					"enabled":     true,
+					"server_name": "cloudflare-dns.com",
+				},
 			},
 			{
-				"tag":      "dns-direct",
-				"address":  "https://77.88.8.8/dns-query",
-				"detour":   "direct",
+				"type":       "https",
+				"tag":        "dns-direct",
+				"server":     "77.88.8.8",
+				"server_port": 443,
+				"path":       "/dns-query",
+				"detour":     "direct",
+				"tls": map[string]any{
+					"enabled":     true,
+					"server_name": "dns.yandex.ru",
+				},
 			},
 		},
 		"rules": []map[string]any{
