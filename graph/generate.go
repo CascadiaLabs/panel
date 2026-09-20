@@ -545,7 +545,9 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 	// Объявления удалённых rule-set'ов (.srs), на которые ссылаются системные правила.
 	route["rule_set"] = buildRuleSets(directTag)
 	// default_domain_resolver обязателен при использовании resolve action.
+	// default_http_client — обязательный с 1.14 (выбирает клиент для remote rule-set'ов).
 	route["default_domain_resolver"] = "dns-bootstrap"
+	route["default_http_client"] = directTag + "-http-client"
 	cfg["route"] = route
 	// http_clients — замена устаревшего download_detour в sing-box 1.14.
 	cfg["http_clients"] = buildHTTPClients(directTag)
@@ -656,8 +658,8 @@ func buildRuleSets(directTag string) []map[string]any {
 func buildHTTPClients(directTag string) []map[string]any {
 	return []map[string]any{
 		{
-			"tag":  directTag + "-http-client",
-			"dial": map[string]any{"detour": directTag},
+			"tag":     directTag + "-http-client",
+			"detour":  directTag,
 		},
 	}
 }
@@ -731,11 +733,9 @@ func buildDNSConfig(outbounds []map[string]any, directTag string) map[string]any
 	}
 
 	return map[string]any{
-		"servers":                servers,
-		"rules":                  rules,
-		"default":                "dns-bootstrap",
-		"final":                  "dns-remote",
-		"default_domain_resolver": "dns-bootstrap",
+		"servers": servers,
+		"rules":   rules,
+		"final":   "dns-remote",
 	}
 }
 

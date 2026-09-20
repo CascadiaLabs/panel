@@ -280,18 +280,6 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 					"server_name": "cloudflare-dns.com",
 				},
 			},
-			// Direct DNS: для русских доменов и служебных запросов
-			// {
-			// 	"type":        "https",
-			// 	"tag":         "dns-direct",
-			// 	"server":      "8.8.8.8",
-			// 	"server_port": 443,
-			// 	"path":        "/dns-query",
-			// 	"tls": map[string]any{
-			// 		"enabled":     true,
-			// 		"server_name": "dns.google",
-			// 	},
-			// },
 			// Direct DNS: системный резолвер. Через прокси НЕ идёт — иначе Ozon/WB/Сбер
 			// видят «зарубежный» ответ и/или получают Anycast-IP вне geoip-ru.
 			{
@@ -310,9 +298,7 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 			// Clash Global mode -> remote DNS
 			{"action": "route", "clash_mode": "global", "server": "dns-remote"},
 		},
-		"final":                   "dns-remote",
-		"default":                 "dns-bootstrap",
-		"default_domain_resolver": "dns-bootstrap",
+		"final": "dns-remote",
 	}
 
 	// Route rules (современный формат sing-box 1.14+ с action: "route")
@@ -327,19 +313,6 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 	// 8. resolve - AFTER all domain-based rules
 	// 9. final = proxy-group
 
-	// old:
-	// routeRules := []map[string]any{
-	// 	{"action": "sniff"},
-	// 	{"protocol": "dns", "action": "hijack-dns"},
-	// 	{"action": "route", "ip_is_private": true, "outbound": "direct"},
-	// 	{"action": "route", "rule_set": []string{"geosite-category-ru"}, "outbound": "direct"},
-	// 	{"action": "route", "ip_cidr": []string{"geoip:ru"}, "outbound": "direct"},
-	// 	{"action": "route", "domain_suffix": []string{".ru", ".su", ".xn--p1ai"}, "outbound": "direct"},
-	// 	{"action": "route", "domain_suffix": []string{"vk.com", "yandex.ru", "gosuslugi.ru", "sberbank.ru"}, "outbound": "direct"},
-	// 	{"action": "route", "clash_mode": "Direct", "outbound": "direct"},
-	// 	{"action": "route", "clash_mode": "Global", "outbound": "proxy-group"},
-	// 	{"action": "resolve"},
-	// }
 	routeRules := []map[string]any{
 		{"action": "sniff"},
 		{"protocol": "dns", "action": "hijack-dns"},
@@ -363,30 +336,27 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 	route := map[string]any{
 		"rule_set": []map[string]any{
 			{
-				"tag":       "geosite-category-ru",
-				"type":      "remote",
-				"format":    "binary",
-				"url":       "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs",
-				"http_client": "direct-http-client",
+				"tag":            "geosite-category-ru",
+				"type":           "remote",
+				"format":         "binary",
+				"url":            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs",
+				"http_client":    "direct-http-client",
+				"update_interval": "7d",
 			},
 			{
-				"tag":       "geoip-ru",
-				"type":      "remote",
-				"format":    "binary",
-				"url":       "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs",
-				"http_client": "direct-http-client",
+				"tag":            "geoip-ru",
+				"type":           "remote",
+				"format":         "binary",
+				"url":            "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs",
+				"http_client":    "direct-http-client",
+				"update_interval": "7d",
 			},
 		},
 		"rules":                   routeRules,
 		"final":                   "proxy-group",
 		"auto_detect_interface":   true,
 		"default_domain_resolver": "dns-bootstrap",
-		"http_clients": []map[string]any{
-			{
-				"tag": "direct-http-client",
-				"dial": map[string]any{"detour": "direct"},
-			},
-		},
+		"default_http_client":     "direct-http-client",
 	}
 
 	// Клиентский inbound: TUN (sing-box 1.14+ формат)
@@ -401,7 +371,10 @@ func GetSingBoxSubscriptionConfig(st graph.State, phys []graph.PhysNode, creds g
 	}
 
 	result := map[string]any{
-		"log":       map[string]any{"level": "info"},
+		"log":        map[string]any{"level": "info"},
+		"http_clients": []map[string]any{
+			{"tag": "direct-http-client", "detour": "direct"},
+		},
 		"dns":       dns,
 		"inbounds":  inbounds,
 		"outbounds": outbounds,

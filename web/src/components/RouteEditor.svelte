@@ -1,6 +1,6 @@
 <script lang="ts">
   // Визуальный редактор client_route для SubscriptionSettings.
-  // Поддерживает оба формата: объект {rules: [...]} и массив [...].
+  // Выдаёт валидный sing-box 1.14 route JSON.
 
   let { value = '', disabled = false } = $props();
 
@@ -10,9 +10,9 @@
 
   interface Rule {
     action: string;
-    outbounds: string;
+    outbound: string;
     domain: string;
-    ip: string;
+    ip_cidr: string;
     final: boolean;
   }
 
@@ -29,36 +29,38 @@
     if (!raw.trim()) return [];
     try {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map(normalizeRule);
-      if (parsed.rules && Array.isArray(parsed.rules)) {
-        return parsed.rules.map(normalizeRule);
-      }
-      return [];
+      const arr = Array.isArray(parsed) ? parsed : (parsed && parsed.rules) || [];
+      return arr.map(normalizeRule);
     } catch {
       return [];
     }
   }
 
   function normalizeRule(r: any): Rule {
+    // Поддержка старого формата (outbounds, ip) и нового (outbound, ip_cidr).
+    const outbound = r.outbound ?? (Array.isArray(r.outbounds) ? r.outbounds[0] ?? '' : '');
     return {
       action: r.action || 'route',
-      outbounds: Array.isArray(r.outbounds) ? r.outbounds.join('\n') : '',
-      domain: Array.isArray(r.domain) ? r.domain.join('\n') : '',
-      ip: Array.isArray(r.ip) ? r.ip.join('\n') : '',
-      final: r.final || false,
+      outbound: Array.isArray(r.outbound) ? r.outbound.join('\n') : outbound,
+      domain: Array.isArray(r.domain) ? r.domain.join('\n') : (r.domain ?? ''),
+      ip_cidr: Array.isArray(r.ip_cidr) ? r.ip_cidr.join('\n') : (r.ip ?? ''),
+      final: !!r.final,
     };
   }
 
   function serializeRules(): string {
-    const ruleObjs = rules.map((r) => {
+    const regular: Record<string, any>[] = [];
+    const catchAll: Record<string, any>[] = [];
+    for (const r of rules) {
       const obj: Record<string, any> = { action: r.action };
-      if (r.outbounds.trim()) obj.outbounds = r.outbounds.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.outbound.trim()) obj.outbound = r.outbound.trim();
       if (r.domain.trim()) obj.domain = r.domain.split('\n').map((s: string) => s.trim()).filter(Boolean);
-      if (r.ip.trim()) obj.ip = r.ip.split('\n').map((s: string) => s.trim()).filter(Boolean);
-      if (r.final) obj.final = true;
-      return obj;
-    });
-    return JSON.stringify({ rules: ruleObjs }, null, 2);
+      if (r.ip_cidr.trim()) obj.ip_cidr = r.ip_cidr.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      (r.final ? catchAll : regular).push(obj);
+    }
+    // Catch-all без условий = финальное правило (аналог route.final).
+    const all = [...regular, ...catchAll.map(o => ({ action: 'route', outbound: o.outbound }))];
+    return JSON.stringify({ rules: all }, null, 2);
   }
 
   function syncValue() {
@@ -67,7 +69,7 @@
   }
 
   function addRule() {
-    rules = [...rules, { action: 'route', outbounds: '', domain: '', ip: '', final: false }];
+    rules = [...rules, { action: 'route', outbound: '', domain: '', ip_cidr: '', final: false }];
     syncValue();
   }
 
@@ -138,27 +140,29 @@
           <span class="rule-number">#{i + 1}</span>
           <select value={rule.action} onchange={(e) => onRuleAction(i, e)} disabled={disabled}>
             <option value="route">route</option>
-            <option value="selector">selector</option>
-            <option value="block">block</option>
+            <option value="reject">reject</option>
+            <option value="hijack-dns">hijack-dns</option>
+            <option value="sniff">sniff</option>
+            <option value="resolve">resolve</option>
           </select>
           <label class="final-checkbox">
             <input type="checkbox" checked={rule.final} onchange={(e) => onFinalChange(i, e)} disabled={disabled} />
-            final
+            final (catch-all)
           </label>
           <button type="button" class="remove" onclick={() => removeRule(i)} disabled={disabled}>✕</button>
         </div>
         <div class="rule-fields">
           <div class="field">
-            <label>Outbounds</label>
-            <textarea rows="2" value={rule.outbounds} oninput={(e) => onRuleFieldChange(i, 'outbounds', e)} placeholder="direct\nproxy" disabled={disabled}></textarea>
+            <label>Outbound</label>
+            <textarea rows="2" value={rule.outbound} oninput={(e) => onRuleFieldChange(i, 'outbound', e)} placeholder="direct" disabled={disabled}></textarea>
           </div>
           <div class="field">
-            <label>Domain (geosite-*)</label>
-            <textarea rows="2" value={rule.domain} oninput={(e) => onRuleFieldChange(i, 'domain', e)} placeholder="geosite:ru\ngeosite:google" disabled={disabled}></textarea>
+            <label>Domain</label>
+            <textarea rows="2" value={rule.domain} oninput={(e) => onRuleFieldChange(i, 'domain', e)} placeholder="geosite:ru\nexample.com" disabled={disabled}></textarea>
           </div>
           <div class="field">
-            <label>IP (geoip-*)</label>
-            <textarea rows="2" value={rule.ip} oninput={(e) => onRuleFieldChange(i, 'ip', e)} placeholder="geoip:ru\ngeoip:private" disabled={disabled}></textarea>
+            <label>IP / CIDR (ip_cidr)</label>
+            <textarea rows="2" value={rule.ip_cidr} oninput={(e) => onRuleFieldChange(i, 'ip_cidr', e)} placeholder="geoip:ru\n192.168.0.0/16" disabled={disabled}></textarea>
           </div>
         </div>
       </div>

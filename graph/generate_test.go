@@ -1,9 +1,19 @@
 package graph
 
 import (
+	crand "crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestGenerateTwoNodeCascade — golden-сценарий:
@@ -556,4 +566,165 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestGenerateSingbox114Fields — конфиг ноды для sing-box 1.14:
+// http_clients на верхнем уровне (detour, без dial), route.default_http_client,
+// dns без default/default_domain_resolver, rule_set с http_client.
+func TestGenerateSingbox114Fields(t *testing.T) {
+	st, phys := twoNodeCascade(t)
+	configs, err := Generate(st, phys, InboundRouteRules{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for nodeID, cfgJSON := range configs {
+		var cfg map[string]any
+		if err := json.Unmarshal([]byte(cfgJSON), &cfg); err != nil {
+			t.Fatalf("%s: %v", nodeID, err)
+		}
+		// http_clients — топ-уровневый, с detour, без dial
+		hc, ok := cfg["http_clients"].([]any)
+		if !ok || len(hc) == 0 {
+			t.Fatalf("%s: missing top-level http_clients", nodeID)
+		}
+		hco := hc[0].(map[string]any)
+		if hco["detour"] == nil {
+			t.Fatalf("%s: http_clients[0] has no detour", nodeID)
+		}
+		if _, has := hco["dial"]; has {
+			t.Fatalf("%s: http_clients[0] must not have 'dial'", nodeID)
+		}
+		// route: default_http_client, без http_clients
+		route, ok := cfg["route"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: missing route", nodeID)
+		}
+		if route["default_http_client"] == nil {
+			t.Fatalf("%s: missing route.default_http_client", nodeID)
+		}
+		if _, has := route["http_clients"]; has {
+			t.Fatalf("%s: route.http_clients must not exist", nodeID)
+		}
+		// dns: без default / default_domain_resolver, с final
+		dns, ok := cfg["dns"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: missing dns", nodeID)
+		}
+		for _, k := range []string{"default", "default_domain_resolver"} {
+			if _, has := dns[k]; has {
+				t.Fatalf("%s: dns.%s must not exist", nodeID, k)
+			}
+		}
+		if dns["final"] == nil {
+			t.Fatalf("%s: missing dns.final", nodeID)
+		}
+		// rule_set с http_client
+		rss, ok := route["rule_set"].([]any)
+		if !ok || len(rss) == 0 {
+			t.Fatalf("%s: missing route.rule_set", nodeID)
+		}
+		for _, r := range rss {
+			rs := r.(map[string]any)
+			if rs["http_client"] == nil {
+				t.Fatalf("%s: rule_set %v missing http_client", nodeID, rs["tag"])
+			}
+		}
+	}
+}
+
+// TestSingboxCheckNodeConfigs — gold-standard: реальный бинарник sing-box
+// валидирует сгенерированные конфиги нод (SINGBOX_BIN=<path>, иначе skip).
+func TestSingboxCheckNodeConfigs(t *testing.T) {
+	bin := os.Getenv("SINGBOX_BIN")
+	if bin == "" {
+		bin = "sing-box"
+	}
+	if _, err := exec.LookPath(bin); err != nil {
+		t.Skip("sing-box binary not found; set SINGBOX_BIN to enable")
+	}
+	priv, _, err := GenerateRealityKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM, keyPEM, err := selfSignedCert(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = keyPEM
+	// nodeA: vless+reality вход, каскад на nodeB + direct.
+	// nodeB: vless (самоподписанный TLS) вход, direct выход.
+	st := State{
+		Nodes: []Node{
+			{ID: "in-a", NodeID: "nodeA", Kind: KindInbound, Protocol: "vless", Tag: "in-a", Entry: true,
+				Settings: mustJSON(t, InboundSettings{
+					ListenPort: 443, PublicHost: "a.example.com",
+					Users: []InboundUser{{Name: "u", UUID: "11111111-1111-1111-1111-111111111111"}},
+					TLS: &InboundTLS{Enabled: true, ServerName: "a.example.com", Reality: &RealityIn{
+						Enabled: true, PrivateKey: priv, ShortIDs: []string{"abcd1234"},
+						HandshakeServer: "www.microsoft.com", HandshakePort: 443,
+					}},
+				})},
+			{ID: "out-a", NodeID: "nodeA", Kind: KindOutbound, Protocol: "vless", Tag: "out-a",
+				Settings: mustJSON(t, OutboundSettings{})},
+			{ID: "in-b", NodeID: "nodeB", Kind: KindInbound, Protocol: "vless", Tag: "in-b",
+				Settings: mustJSON(t, InboundSettings{
+					ListenPort: 8443, PublicHost: "b.example.com",
+					Users: []InboundUser{{Name: "u", UUID: "22222222-2222-2222-2222-222222222222"}},
+					TLS: &InboundTLS{Enabled: true, ServerName: "b.example.com", CertPEM: certPEM, KeyPEM: keyPEM},
+				})},
+			{ID: "out-b", NodeID: "nodeB", Kind: KindOutbound, Protocol: "direct", Tag: "out-b", Exit: true},
+		},
+		Edges: []Edge{
+			{ID: "e1", SourceID: "in-a", TargetID: "out-a"},
+			{ID: "e2", SourceID: "out-a", TargetID: "in-b"},
+			{ID: "e3", SourceID: "in-b", TargetID: "out-b"},
+		},
+	}
+	phys := []PhysNode{
+		{ID: "nodeA", Name: "Node A", GRPCURL: "a.example.com:6237"},
+		{ID: "nodeB", Name: "Node B", GRPCURL: "b.example.com:6237"},
+	}
+	configs, err := Generate(st, phys, InboundRouteRules{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for nodeID, cfg := range configs {
+		f := filepath.Join(t.TempDir(), nodeID+".json")
+		if err := os.WriteFile(f, []byte(cfg), 0644); err != nil {
+			t.Fatal(err)
+		}
+		out, err := exec.Command(bin, "check", "-c", f).CombinedOutput()
+		if err != nil {
+			t.Fatalf("sing-box check node %s: %v\n%s", nodeID, err, out)
+		}
+	}
+}
+
+// selfSignedCert генерирует самоподписанный X.509 сертификат и ключ (PEM) для тестов.
+func selfSignedCert(t *testing.T) (string, string, error) {
+	t.Helper()
+	priv, err := rsa.GenerateKey(crand.Reader, 2048)
+	if err != nil {
+		return "", "", err
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "b.example.com"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:     []string{"b.example.com"},
+	}
+	der, err := x509.CreateCertificate(crand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		return "", "", err
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		return "", "", err
+	}
+	certPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	keyPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}))
+	return certPEM, keyPEM, nil
 }
