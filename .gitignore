@@ -147,3 +147,4 @@ web/test-results/
 web/playwright-report/
 
 *.db
+.gocache/

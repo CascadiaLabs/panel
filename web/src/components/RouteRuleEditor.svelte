@@ -11,7 +11,7 @@
 
   interface Rule {
     action: string;
-    outbounds: string;
+    outbound: string;
     domain: string;
     domain_suffix: string;
     domain_keyword: string;
@@ -34,7 +34,7 @@
 
   const defaultRule = (): Rule => ({
     action: 'route',
-    outbounds: '',
+    outbound: '',
     domain: '',
     domain_suffix: '',
     domain_keyword: '',
@@ -64,7 +64,7 @@
       const same = parsed.length === rules.length &&
         parsed.every((r, i) =>
           r.action === rules[i]?.action &&
-          r.outbounds === rules[i]?.outbounds &&
+          r.outbound === rules[i]?.outbound &&
           r.domain === rules[i]?.domain &&
           r.domain_suffix === rules[i]?.domain_suffix &&
           r.domain_keyword === rules[i]?.domain_keyword &&
@@ -100,9 +100,11 @@
   }
 
   function normalizeRule(r: any): Rule {
+    // Поддержка старого (outbounds) и нового (outbound) форматов.
+    const outbound = r.outbound ?? (Array.isArray(r.outbounds) ? r.outbounds[0] ?? '' : '');
     return {
       action: r.action || 'route',
-      outbounds: Array.isArray(r.outbounds) ? r.outbounds.join('\n') : '',
+      outbound: Array.isArray(r.outbound) ? r.outbound.join('\n') : outbound,
       domain: Array.isArray(r.domain) ? r.domain.join('\n') : '',
       domain_suffix: Array.isArray(r.domain_suffix) ? r.domain_suffix.join('\n') : '',
       domain_keyword: Array.isArray(r.domain_keyword) ? r.domain_keyword.join('\n') : '',
@@ -125,9 +127,11 @@
   }
 
   function serializeRules(): string {
-    const ruleObjs = rules.map((r) => {
+    const regular: Record<string, any>[] = [];
+    const catchAll: Record<string, any>[] = [];
+    for (const r of rules) {
       const obj: Record<string, any> = { action: r.action };
-      if (r.outbounds.trim()) obj.outbounds = r.outbounds.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      if (r.outbound.trim()) obj.outbound = r.outbound.trim();
       if (r.domain.trim()) obj.domain = r.domain.split('\n').map((s: string) => s.trim()).filter(Boolean);
       if (r.domain_suffix.trim()) obj.domain_suffix = r.domain_suffix.split('\n').map((s: string) => s.trim()).filter(Boolean);
       if (r.domain_keyword.trim()) obj.domain_keyword = r.domain_keyword.split('\n').map((s: string) => s.trim()).filter(Boolean);
@@ -145,10 +149,11 @@
       if (r.gid.trim()) obj.gid = r.gid.split('\n').map((s: string) => s.trim()).filter(Boolean);
       if (r.network_type.trim()) obj.network_type = r.network_type.split('\n').map((s: string) => s.trim()).filter(Boolean);
       if (r.inbound.trim()) obj.inbound = r.inbound.split('\n').map((s: string) => s.trim()).filter(Boolean);
-      if (r.final) obj.final = true;
-      return obj;
-    });
-    return JSON.stringify(ruleObjs, null, 2);
+      (r.final ? catchAll : regular).push(obj);
+    }
+    // Catch-all правила (final) выводятся в конце без условий — это аналог route.final.
+    const all = [...regular, ...catchAll.map(o => ({ action: 'route', outbound: o.outbound }))];
+    return JSON.stringify(all, null, 2);
   }
 
   function syncValue() {
@@ -208,7 +213,7 @@
 
   // Поля для отображения в UI (в логическом порядке)
   const fields: { key: keyof Rule; label: string; placeholder: string; rows: number }[] = [
-    { key: 'outbounds', label: 'Outbounds (по одному на строку)', placeholder: 'direct\nproxy', rows: 2 },
+    { key: 'outbound', label: 'Outbound', placeholder: 'direct', rows: 2 },
     { key: 'domain', label: 'Domain (geosite-*)', placeholder: 'geosite:ru\ngeosite:google', rows: 2 },
     { key: 'domain_suffix', label: 'Domain Suffix (например .ru)', placeholder: '.ru\n.su\n.xn--p1ai', rows: 2 },
     { key: 'domain_keyword', label: 'Domain Keyword', placeholder: 'example\nblocked', rows: 2 },
@@ -251,8 +256,10 @@
           <span class="rule-number">#{i + 1}</span>
           <select value={rule.action} onchange={(e) => onRuleAction(i, e)} disabled={disabled}>
             <option value="route">route</option>
-            <option value="selector">selector</option>
-            <option value="block">block</option>
+            <option value="reject">reject</option>
+            <option value="hijack-dns">hijack-dns</option>
+            <option value="sniff">sniff</option>
+            <option value="resolve">resolve</option>
           </select>
           <label class="final-checkbox">
             <input type="checkbox" checked={rule.final} onchange={(e) => onFinalChange(i, e)} disabled={disabled} />
