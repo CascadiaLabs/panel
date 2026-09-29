@@ -519,6 +519,16 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 		outbounds = append(outbounds, map[string]any{"type": "direct", "tag": directTag})
 	}
 
+	// Check if we have a proper proxy outbound (non-direct) for detour purposes.
+	// direct outbound cannot be used as detour for rule-set/http-client/dns-remote.
+	hasProxyOutbound := false
+	for _, ob := range outbounds {
+		if t, _ := ob["type"].(string); t != "direct" && t != "" {
+			hasProxyOutbound = true
+			break
+		}
+	}
+
 	// Присваиваем outbounds только если есть (или мы создали выше).
 	if len(outbounds) > 0 {
 		cfg["outbounds"] = outbounds
@@ -540,7 +550,7 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 	// 4. User-defined rules (from graph edges + assigned route rules)
 	// 5. resolve (resolve domains to IP for IP-based rules) — ПОСЛЕ domain-based правил!
 	// 6. final (default outbound)
-	systemRules := buildSystemRouteRules(directTag)
+	systemRules := buildSystemRouteRules(directTag, hasProxyOutbound)
 	allRules := append(systemRules, rules...)
 
 	// resolve — резолвим домены в IP ПОСЛЕ всех domain-based правил,
@@ -552,8 +562,8 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 	route := map[string]any{"rules": allRules}
 
 	// Объявления удалённых rule-set'ов (.srs), на которые ссылаются системные правила.
-	// Только если есть directTag (иначе detour to an empty direct outbound).
-	if directTag != "" {
+	// Только если есть directTag И proxy outbound (иначе detour to an empty direct outbound makes no sense).
+	if directTag != "" && hasProxyOutbound {
 		route["final"] = directTag
 		route["rule_set"] = buildRuleSets(directTag)
 		// default_domain_resolver обязателен при использовании resolve action.
@@ -566,6 +576,10 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 
 		// --- DNS configuration with split DNS for .ru domains ---
 		cfg["dns"] = buildDNSConfig(outbounds, directTag)
+	} else if directTag != "" {
+		// Есть directTag, но нет proxy outbound - используем простую маршрутизацию без rule-sets/DNS split.
+		route["final"] = directTag
+		cfg["route"] = route
 	}
 
 	return cfg, nil
@@ -588,7 +602,7 @@ const (
 //
 // domain_suffix стоит ВЫШЕ geosite: это самое предсказуемое правило,
 // оно не зависит от содержимого внешнего rule-set'а.
-func buildSystemRouteRules(directTag string) []map[string]any {
+func buildSystemRouteRules(directTag string, hasProxyOutbound bool) []map[string]any {
 	var rules []map[string]any
 
 	// 1. sniff — извлекать домен из TLS SNI / QUIC Server Name.
@@ -621,25 +635,30 @@ func buildSystemRouteRules(directTag string) []map[string]any {
 		})
 
 		// 5. RU geosite — российские домены из rule-set (.srs), включая vk/yandex/ozon/wb/sber.
-		rules = append(rules, map[string]any{
-			"action":   "route",
-			"rule_set": []string{RuleSetGeositeRU},
-			"outbound": directTag,
-		})
+		// Только если есть proxy outbound для detour при загрузке rule-set.
+		if hasProxyOutbound {
+			rules = append(rules, map[string]any{
+				"action":   "route",
+				"rule_set": []string{RuleSetGeositeRU},
+				"outbound": directTag,
+			})
 
-		// 6. RU geoip — российские IP-диапазоны из rule-set (.srs).
-		rules = append(rules, map[string]any{
-			"action":   "route",
-			"rule_set": []string{RuleSetGeoIPRU},
-			"outbound": directTag,
-		})
+			// 6. RU geoip — российские IP-диапазоны из rule-set (.srs).
+			rules = append(rules, map[string]any{
+				"action":   "route",
+				"rule_set": []string{RuleSetGeoIPRU},
+				"outbound": directTag,
+			})
+		}
 	}
 
-	// 7. Реклама — блокировка по rule-set (работает независимо от directTag).
-	rules = append(rules, map[string]any{
-		"action":   "reject",
-		"rule_set": []string{RuleSetGeositeAds},
-	})
+	// 7. Реклама — блокировка по rule-set (требует proxy outbound для загрузки rule-set).
+	if hasProxyOutbound {
+		rules = append(rules, map[string]any{
+			"action":   "reject",
+			"rule_set": []string{RuleSetGeositeAds},
+		})
+	}
 
 	// Note: resolve НЕ добавляем здесь — он добавляется ПОСЛЕ пользовательских правил
 	// в generateNodeConfig, чтобы domain-based правила успели сработать до резолва.
