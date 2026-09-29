@@ -83,7 +83,7 @@ func (h *Handler) GetStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	st, err := node.FetchStatus(ctx, n.GRPCURL, n.Token, n.CertPEM)
 	if err != nil {
@@ -108,7 +108,7 @@ func (h *Handler) AllStatuses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
 	results := make(map[string]StatusResult, len(nodes))
@@ -120,7 +120,7 @@ func (h *Handler) AllStatuses(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func(n db.Node) {
 			defer wg.Done()
-			nctx, ncancel := context.WithTimeout(ctx, 3*time.Second)
+			nctx, ncancel := context.WithTimeout(ctx, 25*time.Second)
 			defer ncancel()
 
 			st, err := node.FetchStatus(nctx, n.GRPCURL, n.Token, n.CertPEM)

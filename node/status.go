@@ -21,7 +21,7 @@ func FetchStatus(ctx context.Context, addr, token, certPEM string) (Status, erro
 	}
 	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	return client.GetStatus(ctx)
@@ -34,7 +34,7 @@ func FetchConfig(ctx context.Context, addr, token, certPEM string) (string, erro
 	}
 	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	return client.GetConfig(ctx)
@@ -47,7 +47,7 @@ func PushConfig(ctx context.Context, addr, token, certPEM, configJSON string) er
 	}
 	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	return client.PushConfig(ctx, configJSON)

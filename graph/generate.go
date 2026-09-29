@@ -510,15 +510,26 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 	cfg := map[string]any{
 		"log": map[string]any{"level": "info"},
 	}
-	if len(inbounds) > 0 {
-		cfg["inbounds"] = inbounds
-	} else {
-		cfg["inbounds"] = []map[string]any{}
+
+	// --- Ensure directTag is valid before building route rules ---
+	// Если нет directTag и нет outbounds, создаём минимальный direct outbound.
+	// Это гарантирует, что rule-sets и DNS заработают корректно.
+	if directTag == "" && len(outbounds) == 0 {
+		directTag = DefaultDirectTag
+		outbounds = append(outbounds, map[string]any{"type": "direct", "tag": directTag})
 	}
+
+	// Присваиваем outbounds только если есть (или мы создали выше).
 	if len(outbounds) > 0 {
 		cfg["outbounds"] = outbounds
 	} else {
 		cfg["outbounds"] = []map[string]any{}
+	}
+
+	if len(inbounds) > 0 {
+		cfg["inbounds"] = inbounds
+	} else {
+		cfg["inbounds"] = []map[string]any{}
 	}
 
 	// --- Build complete route rules with system rules ---
@@ -539,21 +550,23 @@ func generateNodeConfig(st State, physID string, physByID map[string]PhysNode, b
 	})
 
 	route := map[string]any{"rules": allRules}
+
+	// Объявления удалённых rule-set'ов (.srs), на которые ссылаются системные правила.
+	// Только если есть directTag (иначе detour to an empty direct outbound).
 	if directTag != "" {
 		route["final"] = directTag
-	}
-	// Объявления удалённых rule-set'ов (.srs), на которые ссылаются системные правила.
-	route["rule_set"] = buildRuleSets(directTag)
-	// default_domain_resolver обязателен при использовании resolve action.
-	// default_http_client — обязательный с 1.14 (выбирает клиент для remote rule-set'ов).
-	route["default_domain_resolver"] = "dns-bootstrap"
-	route["default_http_client"] = directTag + "-http-client"
-	cfg["route"] = route
-	// http_clients — замена устаревшего download_detour в sing-box 1.14.
-	cfg["http_clients"] = buildHTTPClients(directTag)
+		route["rule_set"] = buildRuleSets(directTag)
+		// default_domain_resolver обязателен при использовании resolve action.
+		// default_http_client — обязательный с 1.14 (выбирает клиент для remote rule-set'ов).
+		route["default_domain_resolver"] = "dns-bootstrap"
+		route["default_http_client"] = directTag + "-http-client"
+		cfg["route"] = route
+		// http_clients — замена устаревшего download_detour в sing-box 1.14.
+		cfg["http_clients"] = buildHTTPClients(directTag)
 
-	// --- DNS configuration with split DNS for .ru domains ---
-	cfg["dns"] = buildDNSConfig(outbounds, directTag)
+		// --- DNS configuration with split DNS for .ru domains ---
+		cfg["dns"] = buildDNSConfig(outbounds, directTag)
+	}
 
 	return cfg, nil
 }
@@ -590,37 +603,39 @@ func buildSystemRouteRules(directTag string) []map[string]any {
 		"protocol": "dns",
 	})
 
-	// 3. Приватные адреса — всегда напрямую.
-	// ip_is_private вместо ip_cidr: ["geoip:private"] — ip_cidr ждёт реальные CIDR.
-	rules = append(rules, map[string]any{
-		"action":        "route",
-		"ip_is_private": true,
-		"outbound":      directTag,
-	})
+	// 3. Приватные адреса, .ru суффиксы, geosite RU, geoip RU, реклама — только если есть directTag.
+	// Без directTag эти правила бессмысленны (detour to an empty direct outbound).
+	if directTag != "" {
+		// 3. Приватные адреса — всегда напрямую.
+		rules = append(rules, map[string]any{
+			"action":        "route",
+			"ip_is_private": true,
+			"outbound":      directTag,
+		})
 
-	// 4. Доменные суффиксы RU — самое предсказуемое правило, идёт первым из RU-группы.
-	rules = append(rules, map[string]any{
-		"action":        "route",
-		"domain_suffix": []string{"ru", "su", "xn--p1ai"},
-		"outbound":      directTag,
-	})
+		// 4. Доменные суффиксы RU — самое предсказуемое правило, идёт первым из RU-группы.
+		rules = append(rules, map[string]any{
+			"action":        "route",
+			"domain_suffix": []string{"ru", "su", "xn--p1ai"},
+			"outbound":      directTag,
+		})
 
-	// 5. RU geosite — российские домены из rule-set (.srs), включая vk/yandex/ozon/wb/sber.
-	rules = append(rules, map[string]any{
-		"action":   "route",
-		"rule_set": []string{RuleSetGeositeRU},
-		"outbound": directTag,
-	})
+		// 5. RU geosite — российские домены из rule-set (.srs), включая vk/yandex/ozon/wb/sber.
+		rules = append(rules, map[string]any{
+			"action":   "route",
+			"rule_set": []string{RuleSetGeositeRU},
+			"outbound": directTag,
+		})
 
-	// 6. RU geoip — российские IP-диапазоны из rule-set (.srs).
-	// ВАЖНО: именно rule_set, а не ip_cidr: ["geoip:ru"] — ip_cidr ждёт реальные CIDR-сети.
-	rules = append(rules, map[string]any{
-		"action":   "route",
-		"rule_set": []string{RuleSetGeoIPRU},
-		"outbound": directTag,
-	})
+		// 6. RU geoip — российские IP-диапазоны из rule-set (.srs).
+		rules = append(rules, map[string]any{
+			"action":   "route",
+			"rule_set": []string{RuleSetGeoIPRU},
+			"outbound": directTag,
+		})
+	}
 
-	// 7. Реклама — блокировка по rule-set.
+	// 7. Реклама — блокировка по rule-set (работает независимо от directTag).
 	rules = append(rules, map[string]any{
 		"action":   "reject",
 		"rule_set": []string{RuleSetGeositeAds},

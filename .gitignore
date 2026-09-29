@@ -148,3 +148,5 @@ web/playwright-report/
 
 *.db
 .gocache/
+
+.DS_Store
